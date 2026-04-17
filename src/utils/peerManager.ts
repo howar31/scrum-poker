@@ -75,44 +75,54 @@ class PeerManager {
     usePokerStore.getState().setConnected(true);
   }
 
-  async joinRoom(roomId: string) {
+  async joinRoom(roomId: string): Promise<void> {
     if (!this.peer || this.peer.disconnected) await this.init();
-    if (!this.peer) return;
+    if (!this.peer) throw new Error("Failed to initialize PeerJS");
 
     this.isHost = false;
     const hostPeerId = `${PEER_PREFIX}${roomId}`;
     
-    const conn = this.peer.connect(hostPeerId, { reliable: true });
-    this.hostConnection = conn;
+    return new Promise((resolve, reject) => {
+      const conn = this.peer!.connect(hostPeerId, { reliable: true });
+      this.hostConnection = conn;
 
-    const setupConnection = () => {
-      console.log('Connected to host');
-      usePokerStore.getState().setConnected(true);
-      
-      const { playerId, playerName } = usePokerStore.getState();
-      this.sendAction({ type: 'JOIN', payload: { id: playerId, name: playerName, peerId: this.peer!.id } });
-    };
+      const timeout = setTimeout(() => {
+        reject(new Error("Connection to host timed out. Please check the Room ID or your network."));
+      }, 10000);
 
-    if (conn.open) {
-      setupConnection();
-    } else {
-      conn.on('open', setupConnection);
-    }
+      const setupConnection = () => {
+        console.log('Connected to host');
+        usePokerStore.getState().setConnected(true);
+        
+        const { playerId, playerName } = usePokerStore.getState();
+        this.sendAction({ type: 'JOIN', payload: { id: playerId, name: playerName, peerId: this.peer!.id } });
+      };
 
-    conn.on('data', (data: any) => {
-      if (data.type === 'STATE_UPDATE') {
-        usePokerStore.getState().updateRoomState(data.payload);
+      if (conn.open) {
+        setupConnection();
+      } else {
+        conn.on('open', setupConnection);
       }
-    });
 
-    conn.on('close', () => {
-      console.log('Connection to host closed');
-      this.handleHostDisconnect();
-    });
-    
-    conn.on('error', (err) => {
-      console.error('Connection error:', err);
-      this.handleHostDisconnect();
+      conn.on('data', (data: any) => {
+        if (data.type === 'STATE_UPDATE') {
+          clearTimeout(timeout);
+          usePokerStore.getState().updateRoomState(data.payload);
+          resolve();
+        }
+      });
+
+      conn.on('close', () => {
+        console.log('Connection to host closed');
+        this.handleHostDisconnect();
+      });
+      
+      conn.on('error', (err) => {
+        clearTimeout(timeout);
+        console.error('Connection error:', err);
+        reject(err);
+        this.handleHostDisconnect();
+      });
     });
   }
 
