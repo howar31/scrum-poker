@@ -25,7 +25,9 @@ class PeerManager {
     return new Promise((resolve, reject) => {
       this.destroy();
       
-      this.peer = specificPeerId ? new Peer(specificPeerId, { debug: 1 }) : new Peer({ debug: 1 });
+      this.peer = specificPeerId 
+        ? new Peer(specificPeerId, { debug: 1, config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:global.stun.twilio.com:3478' }] } }) 
+        : new Peer({ debug: 1, config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:global.stun.twilio.com:3478' }] } });
 
       this.peer.on('open', (id) => {
         console.log('My peer ID is: ' + id);
