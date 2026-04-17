@@ -16,17 +16,27 @@ export default function Home() {
     }
   }, []);
 
-  const handleCreateRoom = () => {
+  const handleCreateRoom = async () => {
     if (!playerName.trim()) return;
     setIsCreating(true);
-    peerManager.createRoom();
+    try {
+      await peerManager.createRoom();
+    } catch (err) {
+      console.error(err);
+      setIsCreating(false);
+    }
   };
 
-  const handleJoinRoom = (e: React.FormEvent) => {
+  const handleJoinRoom = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!playerName.trim() || !joinRoomId.trim()) return;
     setIsJoining(true);
-    peerManager.joinRoom(joinRoomId.trim());
+    try {
+      await peerManager.joinRoom(joinRoomId.trim());
+    } catch (err) {
+      console.error(err);
+      setIsJoining(false);
+    }
   };
 
   return (

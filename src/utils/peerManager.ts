@@ -21,33 +21,36 @@ class PeerManager {
   private hostConnection: DataConnection | null = null;
   private isHost: boolean = false;
 
-  init() {
-    // Basic cleanup
-    this.destroy();
-    
-    const { playerId } = usePokerStore.getState();
-    const peerId = `${PEER_PREFIX}${playerId}`;
-    
-    this.peer = new Peer(peerId, {
-      debug: 1, // Set to 2 or 3 for more logs if needed
-    });
+  init(): Promise<string> {
+    return new Promise((resolve, reject) => {
+      this.destroy();
+      
+      const { playerId } = usePokerStore.getState();
+      const peerId = `${PEER_PREFIX}${playerId}`;
+      
+      this.peer = new Peer(peerId, {
+        debug: 1, 
+      });
 
-    this.peer.on('open', (id) => {
-      console.log('My peer ID is: ' + id);
-    });
+      this.peer.on('open', (id) => {
+        console.log('My peer ID is: ' + id);
+        resolve(id);
+      });
 
-    this.peer.on('connection', (conn) => {
-      this.handleIncomingConnection(conn);
-    });
+      this.peer.on('connection', (conn) => {
+        this.handleIncomingConnection(conn);
+      });
 
-    this.peer.on('error', (err) => {
-      console.error('PeerJS error:', err);
-      usePokerStore.getState().setError(err.message);
+      this.peer.on('error', (err) => {
+        console.error('PeerJS error:', err);
+        usePokerStore.getState().setError(err.message);
+        reject(err);
+      });
     });
   }
 
-  createRoom() {
-    if (!this.peer) this.init();
+  async createRoom() {
+    if (!this.peer || this.peer.disconnected) await this.init();
     
     this.isHost = true;
     const { playerId, playerName } = usePokerStore.getState();
@@ -70,8 +73,8 @@ class PeerManager {
     usePokerStore.getState().setConnected(true);
   }
 
-  joinRoom(roomId: string) {
-    if (!this.peer) this.init();
+  async joinRoom(roomId: string) {
+    if (!this.peer || this.peer.disconnected) await this.init();
     if (!this.peer) return;
 
     this.isHost = false;
@@ -80,13 +83,19 @@ class PeerManager {
     const conn = this.peer.connect(hostPeerId, { reliable: true });
     this.hostConnection = conn;
 
-    conn.on('open', () => {
+    const setupConnection = () => {
       console.log('Connected to host');
       usePokerStore.getState().setConnected(true);
       
       const { playerId, playerName } = usePokerStore.getState();
       this.sendAction({ type: 'JOIN', payload: { id: playerId, name: playerName } });
-    });
+    };
+
+    if (conn.open) {
+      setupConnection();
+    } else {
+      conn.on('open', setupConnection);
+    }
 
     conn.on('data', (data: any) => {
       if (data.type === 'STATE_UPDATE') {
@@ -107,15 +116,20 @@ class PeerManager {
 
   private handleIncomingConnection(conn: DataConnection) {
     if (!this.isHost) {
-      // If we are not the host, we shouldn't accept connections (unless during migration, handled later)
       conn.close();
       return;
     }
 
-    conn.on('open', () => {
+    const setupIncoming = () => {
       this.connections.set(conn.peer, conn);
       this.broadcastState(); // send initial state
-    });
+    };
+
+    if (conn.open) {
+      setupIncoming();
+    } else {
+      conn.on('open', setupIncoming);
+    }
 
     conn.on('data', (data: any) => {
       if (data.type === 'ACTION') {
@@ -125,13 +139,17 @@ class PeerManager {
 
     conn.on('close', () => {
       this.connections.delete(conn.peer);
-      // Remove player from state
       const peerId = conn.peer.replace(PEER_PREFIX, '');
       const state = usePokerStore.getState();
       const newPlayers = { ...state.players };
       delete newPlayers[peerId];
       usePokerStore.getState().updateRoomState({ players: newPlayers });
       this.broadcastState();
+    });
+    
+    conn.on('error', (err) => {
+      console.error('Incoming connection error:', err);
+      this.connections.delete(conn.peer);
     });
   }
 
