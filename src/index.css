@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #3b82f6;
+  --color-primary-dark: #2563eb;
+  --color-background-light: #f3f4f6;
+  --color-background-dark: #111827;
+  --color-surface-light: #ffffff;
+  --color-surface-dark: #1f2937;
+  --color-text-light: #1f2937;
+  --color-text-dark: #f3f4f6;
+}
+
+@layer utilities {
+  .preserve-3d {
+    transform-style: preserve-3d;
+  }
+  .backface-hidden {
+    backface-visibility: hidden;
+  }
+  .perspective-1000 {
+    perspective: 1000px;
+  }
+}
+
+body {
+  @apply bg-[var(--color-background-light)] text-[var(--color-text-light)] dark:bg-[var(--color-background-dark)] dark:text-[var(--color-text-dark)] transition-colors duration-200;
+}
