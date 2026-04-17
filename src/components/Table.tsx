@@ -14,15 +14,21 @@ interface TableProps {
   onKick: (id: string) => void;
 }
 
-// Deterministic tilt per player so the same person's card keeps the same
-// angle across re-renders. Hash playerId into a small range ±6°.
-function tiltForPlayerId(id: string): number {
+// Deterministic per-player tilt + vertical offset, so every player's card
+// leans and sits slightly differently yet identically across re-renders.
+// Two-axis variation means even two players in the same tilt bucket still
+// look visually distinct.
+function tiltForPlayerId(id: string): { rotate: number; yOffset: number } {
   let hash = 0;
   for (let i = 0; i < id.length; i++) {
     hash = (hash * 31 + id.charCodeAt(i)) | 0;
   }
-  const range = 13; // -6 ... +6
-  return (Math.abs(hash) % range) - 6;
+  const h = Math.abs(hash);
+  // Rotate: ±10° in ~1° increments (21 buckets).
+  const rotate = (h % 21) - 10;
+  // Vertical offset: 0–10 px so some cards sit slightly higher/lower.
+  const yOffset = ((h >>> 5) % 11);
+  return { rotate, yOffset };
 }
 
 function PlayerSeat({
@@ -58,12 +64,18 @@ function PlayerSeat({
     >
       <div
         className="relative"
-        style={animationsEnabled ? { transform: `rotate(${tilt}deg)` } : undefined}
+        style={
+          animationsEnabled
+            ? { transform: `rotate(${tilt.rotate}deg) translateY(${tilt.yOffset}px)` }
+            : undefined
+        }
       >
+        {/* isMe intentionally false: all played cards stay face-down on the
+            table until the host reveals. Standard Planning Poker convention. */}
         <Card
           card={player.card}
           isRevealed={isRevealed}
-          isMe={isMe}
+          isMe={false}
           revealIndex={revealIndex}
           size="lg"
         />

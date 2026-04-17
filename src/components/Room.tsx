@@ -203,7 +203,9 @@ export default function Room() {
             <span className="text-xs text-gray-400">Waiting for host to reset...</span>
           )}
         </div>
-        <div className="flex gap-2 md:gap-3 overflow-x-auto pb-2">
+        {/* pt-8 reserves vertical room for the hover/selected lift so the
+            lifted card isn't clipped by overflow-x-auto. */}
+        <div className="flex gap-2 md:gap-3 overflow-x-auto pt-8 pb-3 -mt-4">
           {HAND.map((card) => (
             <HandCard
               key={card}

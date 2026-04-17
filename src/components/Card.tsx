@@ -68,10 +68,15 @@ export default function Card({ card, isRevealed, isMe, revealIndex = 0, size = '
     stiffness: 220,
     damping: 18,
   });
-  // Holographic foil angle follows pointerX so the sheen slides across the
-  // card back as the mouse moves horizontally.
-  const foilAngle = useTransform(pointerX, [-0.5, 0.5], [40, 140]);
-  const foilBackground = useMotionTemplate`linear-gradient(${foilAngle}deg, transparent 15%, rgba(255,0,200,0.35) 32%, rgba(0,220,255,0.35) 50%, rgba(255,255,100,0.35) 68%, transparent 85%)`;
+  // Holographic sheen angle follows pointerX so the rainbow band slides
+  // across the glass back as the mouse moves horizontally.
+  const foilAngle = useTransform(pointerX, [-0.5, 0.5], [30, 150]);
+  const foilBackground = useMotionTemplate`linear-gradient(${foilAngle}deg, transparent 8%, rgba(255,100,220,0.55) 26%, rgba(100,200,255,0.55) 42%, rgba(255,255,120,0.55) 58%, rgba(120,255,180,0.55) 74%, transparent 92%)`;
+  // Specular highlight position tracks the pointer so the glass reflection
+  // "moves with your eyes" — classic holographic card effect.
+  const specularX = useTransform(pointerX, [-0.5, 0.5], ['20%', '80%']);
+  const specularY = useTransform(pointerY, [-0.5, 0.5], ['20%', '80%']);
+  const specularBackground = useMotionTemplate`radial-gradient(circle at ${specularX} ${specularY}, rgba(255,255,255,0.55), rgba(255,255,255,0) 50%)`;
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!animationsEnabled) return;
@@ -187,30 +192,67 @@ export default function Card({ card, isRevealed, isMe, revealIndex = 0, size = '
             </div>
           </motion.div>
 
-          {/* Back face with holographic foil */}
+          {/* Back face: glass with iridescent rainbow reflection */}
           <div
             className={cn(
-              'absolute inset-0 backface-hidden [transform:rotateY(180deg)] rounded',
+              'absolute inset-0 backface-hidden [transform:rotateY(180deg)] rounded-lg',
               isFlipped && 'hidden'
             )}
           >
-            <div className="relative w-full h-full rounded shadow-sm border border-transparent bg-gradient-to-br from-blue-500 to-indigo-600 overflow-hidden">
-              {/* Static holographic base — slow conic rainbow under the overlay */}
+            <div
+              className="relative w-full h-full rounded-lg overflow-hidden"
+              style={{
+                background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #312e81 100%)',
+                boxShadow:
+                  'inset 0 1px 0 rgba(255,255,255,0.4), inset 0 -1px 0 rgba(255,255,255,0.08), 0 0 0 1px rgba(255,255,255,0.2)',
+              }}
+            >
+              {/* Layer 1: deep iridescent conic rainbow, heavily blurred */}
               <div
-                className="absolute inset-0 opacity-40"
+                className="absolute inset-0"
                 style={{
                   background:
-                    'conic-gradient(from 0deg at 50% 50%, #ff4fd8, #4fbbff, #ffe14f, #4fffaa, #ff4fd8)',
-                  filter: 'blur(24px)',
+                    'conic-gradient(from 45deg at 50% 50%, #ff44cc, #44ccff, #ffff44, #44ffaa, #cc44ff, #ff44cc)',
+                  filter: 'blur(36px)',
+                  mixBlendMode: 'screen',
+                  opacity: 0.55,
                 }}
               />
-              {/* Dynamic sheen — angle follows pointer */}
+
+              {/* Layer 2: pointer-driven rainbow sheen */}
               <motion.div
-                className="absolute inset-0 mix-blend-overlay"
-                style={{ backgroundImage: foilBackground }}
+                className="absolute inset-0"
+                style={{
+                  backgroundImage: foilBackground,
+                  mixBlendMode: 'overlay',
+                }}
               />
-              {/* Original soft radial highlight */}
-              <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-white to-transparent mix-blend-overlay" />
+
+              {/* Layer 3: glass specular highlight that follows the pointer */}
+              <motion.div
+                className="absolute inset-0 pointer-events-none"
+                style={{
+                  backgroundImage: specularBackground,
+                  mixBlendMode: 'screen',
+                }}
+              />
+
+              {/* Layer 4: fixed top-left glass sheen (the "always-on" reflection) */}
+              <div
+                className="absolute inset-0 pointer-events-none"
+                style={{
+                  background:
+                    'linear-gradient(135deg, rgba(255,255,255,0.32) 0%, rgba(255,255,255,0.05) 40%, transparent 55%)',
+                }}
+              />
+
+              {/* Layer 5: bottom edge reflection for depth */}
+              <div
+                className="absolute inset-x-0 bottom-0 h-1/3 pointer-events-none"
+                style={{
+                  background: 'linear-gradient(to top, rgba(255,255,255,0.12), transparent)',
+                }}
+              />
             </div>
           </div>
         </motion.div>
