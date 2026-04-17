@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { usePokerStore } from '../store/usePokerStore';
 import { peerManager } from '../utils/peerManager';
+import { normalizeRoomId } from '../utils/roomId';
+import ArcBrowserWarning from './ArcBrowserWarning';
 
 export default function Home() {
   const { playerName, setPlayerName, error } = usePokerStore();
@@ -12,7 +14,7 @@ export default function Home() {
     const params = new URLSearchParams(window.location.search);
     const roomFromUrl = params.get('room');
     if (roomFromUrl) {
-      setJoinRoomId(roomFromUrl);
+      setJoinRoomId(normalizeRoomId(roomFromUrl));
     }
   }, []);
 
@@ -42,7 +44,7 @@ export default function Home() {
     usePokerStore.getState().setError(null);
     setIsJoining(true);
     try {
-      await peerManager.joinRoom(joinRoomId.trim());
+      await peerManager.joinRoom(normalizeRoomId(joinRoomId));
     } catch (err) {
       console.error(err);
       setIsJoining(false);
@@ -50,7 +52,8 @@ export default function Home() {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center flex-1 max-w-md mx-auto w-full gap-8">
+    <div className="flex flex-col items-center justify-center flex-1 max-w-md mx-auto w-full gap-6">
+      <ArcBrowserWarning />
       {error && (
         <div className="w-full bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative">
           <strong className="font-bold">Error: </strong>
@@ -90,12 +93,16 @@ export default function Home() {
         <form onSubmit={handleJoinRoom} className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-2">Room ID</label>
-            <input 
-              type="text" 
+            <input
+              type="text"
               value={joinRoomId}
-              onChange={(e) => setJoinRoomId(e.target.value)}
+              onChange={(e) => setJoinRoomId(e.target.value.toUpperCase())}
               placeholder="Enter Room ID to join..."
-              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 outline-none"
+              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 outline-none font-mono tracking-wider"
+              maxLength={10}
+              autoCapitalize="characters"
+              autoComplete="off"
+              spellCheck={false}
             />
           </div>
           <button 

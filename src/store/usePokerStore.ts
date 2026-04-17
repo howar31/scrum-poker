@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 
 export type CardValue = '0' | '0.5' | '1' | '2' | '3' | '5' | '8' | '13' | '21' | '?' | '☕' | null;
 
@@ -18,6 +18,14 @@ export interface RoomState {
   isRevealed: boolean;
 }
 
+export type ToastVariant = 'info' | 'warning' | 'error' | 'success';
+
+export interface Toast {
+  id: string;
+  message: string;
+  variant: ToastVariant;
+}
+
 interface PokerState extends RoomState {
   playerId: string;
   playerName: string;
@@ -25,7 +33,8 @@ interface PokerState extends RoomState {
   theme: 'light' | 'dark';
   isConnected: boolean;
   error: string | null;
-  
+  toasts: Toast[];
+
   // Actions
   setPlayerId: (id: string) => void;
   setPlayerName: (name: string) => void;
@@ -33,7 +42,9 @@ interface PokerState extends RoomState {
   toggleTheme: () => void;
   setConnected: (connected: boolean) => void;
   setError: (error: string | null) => void;
-  
+  pushToast: (toast: Omit<Toast, 'id'>) => void;
+  dismissToast: (id: string) => void;
+
   // Room Actions
   updateRoomState: (state: Partial<RoomState>) => void;
   leaveRoom: () => void;
@@ -48,13 +59,14 @@ export const usePokerStore = create<PokerState>()(
       hostId: null,
       players: {},
       isRevealed: false,
-      
+
       playerId: generateId(),
       playerName: '',
       animationsEnabled: true,
       theme: 'dark',
       isConnected: false,
       error: null,
+      toasts: [],
 
       setPlayerId: (id) => set({ playerId: id }),
       setPlayerName: (name) => set({ playerName: name }),
@@ -62,16 +74,29 @@ export const usePokerStore = create<PokerState>()(
       toggleTheme: () => set((state) => ({ theme: state.theme === 'light' ? 'dark' : 'light' })),
       setConnected: (connected) => set({ isConnected: connected, error: null }),
       setError: (error) => set({ error }),
-      
+      pushToast: (toast) =>
+        set((state) => ({
+          toasts: [...state.toasts, { ...toast, id: generateId() }],
+        })),
+      dismissToast: (id) =>
+        set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
+
       updateRoomState: (newState) => set((state) => ({ ...state, ...newState })),
-      leaveRoom: () => set({ roomId: null, hostId: null, players: {}, isRevealed: false, isConnected: false }),
+      leaveRoom: () =>
+        set({ roomId: null, hostId: null, players: {}, isRevealed: false, isConnected: false }),
     }),
     {
       name: 'scrum-poker-storage',
-      partialize: (state) => ({ 
-        playerName: state.playerName, 
+      // playerName/theme/animations: long-lived (localStorage via default storage).
+      // playerId is kept in this same store via partialize; persisting it keeps
+      // the same identity across page reloads so reconnects are recognised as
+      // the same player (instead of a duplicate with the same name).
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        playerId: state.playerId,
+        playerName: state.playerName,
         animationsEnabled: state.animationsEnabled,
-        theme: state.theme 
+        theme: state.theme,
       }),
     }
   )

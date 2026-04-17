@@ -1,17 +1,30 @@
 # Project: Scrum Poker
+
 ## Architecture Pointer
+
 See `SPEC.md` for detailed architecture, state management, and P2P implementation rules.
 
 ## Commands
+
 - **Dev**: `npm run dev`
 - **Build**: `npm run build`
 - **Lint**: `npm run lint`
 
 ## Conventions
+
 - **Language**: TypeScript (React)
 - **Styling**: TailwindCSS
-- **State Management**: Zustand
-- **P2P**: PeerJS
+- **State Management**: Zustand (with `persist` middleware on `localStorage`)
+- **P2P**: PeerJS (Room ID is `scrum-poker-{roomId}`, where `roomId` is 7-char Crockford Base32)
 - **Code Style**: Comments must be in English.
 - Use `lucide-react` for icons.
 - Prefer `clsx` and `tailwind-merge` for conditional classes.
+- Use `framer-motion` `AnimatePresence` for list enter/exit animations; respect `animationsEnabled` store flag.
+- User-facing notifications go through the store's `pushToast` action, not `alert()` or inline error blocks.
+
+## P2P Rules
+
+- `playerId` is persisted so reloads are recognised as reconnects (not duplicates).
+- `createRoom()` must set `isHost = true` before awaiting `init()` — fixes a race where fast joiners are rejected.
+- Client disconnection triggers `scheduleReconnect` (exp backoff, 5 attempts) before falling back to host migration.
+- UI-initiated leave calls `peerManager.leave()`; internal cleanup uses `peerManager.destroy()` — they differ in whether they cancel pending reconnects.
