@@ -47,26 +47,51 @@ A purely frontend, serverless Peer-to-Peer (P2P) Scrum Poker application. It lev
 - Arc identifies itself as Chrome in `navigator.userAgent` but exposes Arc-specific CSS variables on `:root` (e.g., `--arc-palette-title`). `src/utils/browserDetect.ts` detects Arc by reading this variable.
 - Arc's default WebRTC privacy settings (mDNS anonymisation of local IPs) prevent successful ICE negotiation without a TURN server. The Home page displays a prominent amber warning when Arc is detected, instructing the user to change the `arc://flags` setting or switch browsers.
 
-### 6. Animations & UI
+### 6. Room Layout (Table + Hand + Stats)
 
-- **Framer Motion** is used for:
-  - Card flip (`rotateY`) with Material Design easing (`[0.4, 0.0, 0.2, 1]`), 0.75s duration, yellow `boxShadow` pulse after reveal.
-  - Staggered reveal: when the Host triggers Reveal, each player's card flips with a delay of `revealIndex * 0.12s`, one-by-one rather than simultaneously.
-  - Card selection feedback: `whileTap`, scale pulse (1 → 1.15 → 1.05), and a blue ring glow on the selected card.
-  - Player list: `AnimatePresence` drives spring-based enter/exit animations as players join/leave.
-  - Toasts: right-side slide-in / fade-out with `AnimatePresence`, auto-dismiss after 3.5s.
-- **Coffee Card Effect**: Special smoking effect for the ☕ card.
-- **Accessibility / Performance**: `animationsEnabled` toggle. When disabled, all framer-motion wrappers fall back to static DOM or plain CSS transitions.
+- **Table** (`src/components/Table.tsx`) — green-felt surface with all players' played cards arranged in a responsive `flex-wrap` row. Each card is rotated ±6° based on a deterministic hash of `player.id`, so the same player's card always leans the same direction but different players lean differently, producing an organic "cards tossed on a table" feel without risking upside-down cards.
+- **Statistics** (`src/components/Statistics.tsx`) — right-side panel driven by `src/utils/stats.ts`:
+  - Pre-reveal: voting progress (`X / Y voted`) with animated bar.
+  - Post-reveal: Average / Min / Max metric cards, Consensus badge (only when every numeric voter picked the same value), and a Distribution bar chart across all chosen cards. `?` and `☕` votes are excluded from Average/Min/Max but counted in Distribution.
+- **Hand rail** — bottom-anchored horizontal card strip with the 11 selectable cards. Hovering lifts the card; clicking commits a `SELECT_CARD` action; clicking the same card again unselects.
+- **Host actions** (Reveal / Reset) sit in a centered action bar under the table, visible only to the Host.
+
+### 7. Card Visual Effects (`src/components/Card.tsx`)
+
+- **Pointer tilt**: `useMotionValue` tracks pointer X/Y over the card; `useSpring`-smoothed `rotateX` / `rotateY` produce a ±14° 3D tilt that spring-returns to rest on mouse leave.
+- **Holographic foil (card back)**: a static `conic-gradient` base plus a pointer-driven `linear-gradient` sheen overlay (`useMotionTemplate` binds angle to pointer X). Result: visible rainbow foil even at rest, sheen sliding across as the pointer moves.
+- **Physical flip**: 0.9 s keyframe animation that lifts the card (y↑ + larger shadow) during the first quarter, rotates it around Y during the middle half, and places it back down during the last quarter — mimicking "pick up, flip, set down".
+- **Staggered reveal**: `revealIndex * 0.12s` delay so cards flip one after another at reveal time.
+- **Green pulse on reveal**: every card (not just others') gets a brief green `boxShadow` pulse post-flip, replacing the confusing isMe-asymmetric yellow ring.
+- **Coffee card smoke**: 5 staggered particles rising with slight lateral drift for a continuous smoke trail.
+- **`animationsEnabled` toggle**: disables all of the above; Card falls back to a static DOM shape, preserving layout but skipping effects.
+
+### 8. Home Entry Flow
+
+`src/components/Home.tsx` reads `?room=` on first render and renders **one primary CTA at a time**, eliminating the mis-click risk of side-by-side Create/Join buttons:
+
+- With `?room=<id>`: "You're invited" — Join form only, Room ID prefilled. A subtle link offers "Create a new one instead" (clears the URL param and reloads).
+- Without `?room=`: "Start a session" — Create form only. A collapsed disclosure below opens a Join form for the rare "someone dictated a Room ID to me" case.
+- Both branches share `NameInput` and subcomponents `CreateForm` / `JoinForm`.
+
+### 9. Other UI
+
+- **Toasts**: right-side slide-in / fade-out with `AnimatePresence`, auto-dismiss after 3.5 s.
+- **Accessibility / Performance**: `animationsEnabled` toggle respected by every animated component.
 - **Theming**: Dark mode support via Tailwind's `dark:` classes and toggled on `<html>` element.
 
-### 7. Room Lifecycle
+### 10. Room Lifecycle
 
 - Rooms are ephemeral. They exist entirely in memory. When the last participant leaves, the room simply ceases to exist.
 
 ## File Structure
 
 - `src/components/`: React UI components.
-  - `Home.tsx`, `Room.tsx`, `Card.tsx` — primary views
+  - `Home.tsx` — URL-driven Create vs Join entry
+  - `Room.tsx` — top bar, Table + Statistics layout, bottom hand rail
+  - `Table.tsx` — felt table with tilted player cards
+  - `Statistics.tsx` — voting progress + post-reveal aggregates
+  - `Card.tsx` — display card with tilt, foil, physical flip, smoke
   - `ArcBrowserWarning.tsx` — amber banner shown to Arc users
   - `Toast.tsx` — top-right toast container, driven by the store
 - `src/store/usePokerStore.ts` — Zustand state, persistence, and toast queue.
@@ -74,6 +99,7 @@ A purely frontend, serverless Peer-to-Peer (P2P) Scrum Poker application. It lev
   - `peerManager.ts` — PeerJS wrapper: `createRoom`, `joinRoom`, `joinHost`, `scheduleReconnect`, `handleHostDisconnect`, `transferHost`, `leave`.
   - `roomId.ts` — Crockford Base32 generation and input normalisation.
   - `browserDetect.ts` — Arc detection via CSS variable.
+  - `stats.ts` — pure `computeStats(players)` returning averages, min/max, consensus, distribution.
 
 ## Known Limitations
 

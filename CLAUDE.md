@@ -20,7 +20,9 @@ See `SPEC.md` for detailed architecture, state management, and P2P implementatio
 - Use `lucide-react` for icons.
 - Prefer `clsx` and `tailwind-merge` for conditional classes.
 - Use `framer-motion` `AnimatePresence` for list enter/exit animations; respect `animationsEnabled` store flag.
+- Pointer-driven animations use `useMotionValue` + `useSpring` / `useTransform` / `useMotionTemplate` instead of re-rendering on mouse moves.
 - User-facing notifications go through the store's `pushToast` action, not `alert()` or inline error blocks.
+- Home page must expose exactly one primary CTA at a time (Create OR Join, chosen by `?room=` URL param).
 
 ## P2P Rules
 
