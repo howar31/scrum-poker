@@ -8,6 +8,7 @@ export interface Player {
   name: string;
   card: CardValue;
   joinedAt: number;
+  peerId: string;
 }
 
 export interface RoomState {
@@ -38,7 +39,7 @@ interface PokerState extends RoomState {
   leaveRoom: () => void;
 }
 
-const generateId = () => Math.random().toString(36).substring(2, 9);
+export const generateId = () => Math.random().toString(36).substring(2, 9);
 
 export const usePokerStore = create<PokerState>()(
   persist(
@@ -69,7 +70,6 @@ export const usePokerStore = create<PokerState>()(
       name: 'scrum-poker-storage',
       partialize: (state) => ({ 
         playerName: state.playerName, 
-        playerId: state.playerId,
         animationsEnabled: state.animationsEnabled,
         theme: state.theme 
       }),

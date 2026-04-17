@@ -3,7 +3,7 @@ import { usePokerStore } from '../store/usePokerStore';
 import { peerManager } from '../utils/peerManager';
 
 export default function Home() {
-  const { playerName, setPlayerName } = usePokerStore();
+  const { playerName, setPlayerName, error } = usePokerStore();
   const [joinRoomId, setJoinRoomId] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
@@ -16,8 +16,17 @@ export default function Home() {
     }
   }, []);
 
+  // Reset joining state if an error occurs
+  useEffect(() => {
+    if (error) {
+      setIsCreating(false);
+      setIsJoining(false);
+    }
+  }, [error]);
+
   const handleCreateRoom = async () => {
     if (!playerName.trim()) return;
+    usePokerStore.getState().setError(null);
     setIsCreating(true);
     try {
       await peerManager.createRoom();
@@ -30,6 +39,7 @@ export default function Home() {
   const handleJoinRoom = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!playerName.trim() || !joinRoomId.trim()) return;
+    usePokerStore.getState().setError(null);
     setIsJoining(true);
     try {
       await peerManager.joinRoom(joinRoomId.trim());
@@ -41,6 +51,12 @@ export default function Home() {
 
   return (
     <div className="flex flex-col items-center justify-center flex-1 max-w-md mx-auto w-full gap-8">
+      {error && (
+        <div className="w-full bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative">
+          <strong className="font-bold">Error: </strong>
+          <span className="block sm:inline">{error}</span>
+        </div>
+      )}
       <div className="w-full bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-xl space-y-6 border border-gray-100 dark:border-gray-700">
         <h2 className="text-2xl font-bold text-center">Join or Create a Room</h2>
         
