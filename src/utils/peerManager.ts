@@ -513,8 +513,11 @@ class PeerManager {
     else conn.on('open', setupConnection);
   }
 
-  // Teardown used internally (e.g. before reinitializing a peer). Does NOT set
-  // intentionalLeave, so pending reconnect flows are preserved.
+  // Teardown used internally (e.g. before reinitializing a peer inside init()).
+  // Must NOT reset isHost: createRoom sets isHost=true BEFORE awaiting init(),
+  // and resetting it here would undo that race fix and cause the host to
+  // reject every incoming connection. Role transitions are the caller's
+  // responsibility (createRoom/joinRoom/joinHost set their own role).
   destroy() {
     if (this.peer) {
       this.peer.destroy();
@@ -522,11 +525,11 @@ class PeerManager {
     }
     this.connections.clear();
     this.hostConnection = null;
-    this.isHost = false;
   }
 
   // User-initiated leave. Cancels any pending reconnect and tears everything
-  // down. Call this from the UI's "Leave Room" button instead of destroy().
+  // down, including the role flag. Call this from the UI's "Leave Room"
+  // button instead of destroy().
   leave() {
     this.intentionalLeave = true;
     if (this.reconnectTimer) {
@@ -535,6 +538,7 @@ class PeerManager {
     }
     this.reconnectAttempt = 0;
     this.destroy();
+    this.isHost = false;
   }
 }
 
