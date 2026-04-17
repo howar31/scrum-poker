@@ -14,6 +14,8 @@ A purely frontend, serverless Peer-to-Peer (P2P) Scrum Poker application. It lev
 ### 1. P2P Connection (PeerJS)
 - **Signaling**: Uses PeerJS's public cloud server by default.
 - **Connections**: Data connections are strictly between the Host and individual Peers.
+- **Room Identification**: A room's ID is inherently the `playerId` of the current Host. This ensures seamless PeerJS connections using the structure `scrum-poker-{roomId}`.
+- **Invite Links**: Joining a room via an invite link uses URL search parameters (`?room=XYZ`). The application automatically populates the join field from the URL.
 
 ### 2. State Management (Zustand)
 - Persists user preferences (name, theme, animation toggle) using `zustand/middleware` `persist`.

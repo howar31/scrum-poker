@@ -15,6 +15,16 @@ function App() {
     }
   }, [theme]);
 
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (roomId) {
+      url.searchParams.set('room', roomId);
+    } else {
+      url.searchParams.delete('room');
+    }
+    window.history.replaceState({}, '', url.toString());
+  }, [roomId]);
+
   return (
     <div className="min-h-screen flex flex-col bg-[var(--color-background-light)] dark:bg-[var(--color-background-dark)] text-[var(--color-text-light)] dark:text-[var(--color-text-dark)] transition-colors duration-200">
       <header className="p-4 flex justify-between items-center border-b border-gray-200 dark:border-gray-800">

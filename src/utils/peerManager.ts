@@ -46,11 +46,12 @@ class PeerManager {
     });
   }
 
-  createRoom(roomId: string) {
+  createRoom() {
     if (!this.peer) this.init();
     
     this.isHost = true;
     const { playerId, playerName } = usePokerStore.getState();
+    const roomId = playerId;
     
     const initialPlayer: Player = {
       id: playerId,

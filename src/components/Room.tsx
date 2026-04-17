@@ -22,7 +22,7 @@ export default function Room() {
 
   const handleCopy = () => {
     if (roomId) {
-      navigator.clipboard.writeText(roomId);
+      navigator.clipboard.writeText(window.location.href);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }

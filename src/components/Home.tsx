@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { usePokerStore } from '../store/usePokerStore';
 import { peerManager } from '../utils/peerManager';
 
@@ -8,11 +8,18 @@ export default function Home() {
   const [isCreating, setIsCreating] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const roomFromUrl = params.get('room');
+    if (roomFromUrl) {
+      setJoinRoomId(roomFromUrl);
+    }
+  }, []);
+
   const handleCreateRoom = () => {
     if (!playerName.trim()) return;
     setIsCreating(true);
-    const newRoomId = Math.random().toString(36).substring(2, 9);
-    peerManager.createRoom(newRoomId);
+    peerManager.createRoom();
   };
 
   const handleJoinRoom = (e: React.FormEvent) => {
