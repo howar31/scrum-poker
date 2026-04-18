@@ -49,7 +49,15 @@
     "startSubtitle": "Create a new room and share the link with your team.",
     "fallbackToggle": "Or join an existing room with a Room ID",
     "failedCreate": "Failed to create room",
-    "failedJoin": "Failed to join room"
+    "failedJoin": "Failed to join room",
+    "joinConnecting": "Connecting to room {{roomId}}...",
+    "joinNotFound": "Can't find room {{roomId}} yet — it may be switching hosts, retrying...",
+    "joinTimeoutRetry": "Host isn't responding — the room may be switching hosts, retrying...",
+    "joinCancel": "Cancel",
+    "joinTimeoutTitle": "Still haven't reached the room",
+    "joinTimeoutBody": "The room may have closed, or the host migration is taking longer than usual. Keep trying?",
+    "joinTimeoutKeepTrying": "Keep trying ({{seconds}}s)",
+    "joinTimeoutGiveUp": "Give up"
   },
   "room": {
     "reset": "Reset",

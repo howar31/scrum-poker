@@ -49,7 +49,15 @@
     "startSubtitle": "建立新房間並把連結分享給團隊。",
     "fallbackToggle": "或使用房間 ID 加入現有房間",
     "failedCreate": "建立房間失敗",
-    "failedJoin": "加入房間失敗"
+    "failedJoin": "加入房間失敗",
+    "joinConnecting": "連線到房間 {{roomId}} 中...",
+    "joinNotFound": "還找不到房間 {{roomId}} — 可能正在換主機,持續嘗試中...",
+    "joinTimeoutRetry": "主機沒有回應 — 房間可能正在換主機,持續嘗試中...",
+    "joinCancel": "取消",
+    "joinTimeoutTitle": "仍然連不上房間",
+    "joinTimeoutBody": "房間可能已經關閉,或是換主機的時間比較久。要繼續等嗎?",
+    "joinTimeoutKeepTrying": "繼續等 ({{seconds}} 秒)",
+    "joinTimeoutGiveUp": "放棄"
   },
   "room": {
     "reset": "重設",
