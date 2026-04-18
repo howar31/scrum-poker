@@ -98,7 +98,7 @@
   },
   "arc": {
     "title": "偵測到 Arc 瀏覽器",
-    "description": "Arc 的 WebRTC 行為和其他瀏覽器不同。<strong>建議你不要當 Host(不要拿皇冠)</strong> — Arc 當 Host 時,其他 Chrome / Firefox 使用者在換 Host 時可能連不上。若要建立房間,請改用 Chrome、Firefox 或 Safari。若你只是加入房間,開啟 <code>arc://flags</code>,搜尋 <em>\"Anonymize local IPs exposed to WebRTC\"</em>,設為 <strong>Disabled</strong> 並重啟 Arc 可減少(但無法完全消除)連線問題。"
+    "description": "Arc 的 WebRTC 行為和其他瀏覽器不相容。<strong>強烈建議你不要當 Host(不要建房、不要接受指派為 Host)</strong> — Arc 當 Host 時,其他 Chrome / Firefox 使用者無論是首次加入還是換 Host 後都可能連不上。若要建立房間,請改用 Chrome、Firefox 或 Safari。若你只能加入別人的房間,開啟 <code>arc://flags</code>,搜尋 <em>\"Anonymize local IPs exposed to WebRTC\"</em>,設為 <strong>Disabled</strong> 並重啟 Arc,可減少(但無法完全消除)連線問題。"
   },
   "toast": {
     "connectionLost": "連線中斷,正在重試 ({{attempt}}/{{max}})...",

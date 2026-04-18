@@ -99,7 +99,7 @@
   },
   "arc": {
     "title": "Arc Browser detected",
-    "description": "Arc's WebRTC behaviour is not fully compatible with other browsers. <strong>We recommend you don't take the Host role (don't take the crown)</strong> — when Arc is Host, other Chrome / Firefox users can fail to reconnect during host migration. To create a room, use Chrome, Firefox, or Safari instead. If you're joining an existing room, open <code>arc://flags</code>, search <em>\"Anonymize local IPs exposed to WebRTC\"</em>, set it to <strong>Disabled</strong>, and restart Arc to reduce (but not fully eliminate) connection problems."
+    "description": "Arc's WebRTC behaviour isn't compatible with other browsers. <strong>Please don't take the Host role (don't create a room, don't accept being made Host)</strong> — when Arc is Host, other Chrome / Firefox users may be unable to join OR to reconnect after a host transfer. Use Chrome, Firefox, or Safari to create rooms. If you can only join someone else's room, open <code>arc://flags</code>, search <em>\"Anonymize local IPs exposed to WebRTC\"</em>, set it to <strong>Disabled</strong>, and restart Arc to reduce (but not fully eliminate) connection problems."
   },
   "toast": {
     "connectionLost": "Connection lost, retrying ({{attempt}}/{{max}})...",
