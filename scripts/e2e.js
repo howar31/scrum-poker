@@ -34,6 +34,9 @@ Modes:
   observe   Single silent client that joins --room and forwards console logs.
   transfer  host + N clients (default 2) + bot-driven host transfer from host to
             Tester01, all verbose. Diagnostic-only; exits after observation.
+  crash     host + N clients (default 3), then kill the host page abruptly
+            (no HOST_LEAVING) so migration is driven by heartbeat + handleHostDisconnect.
+            Verifies the unplanned-disconnect path rather than the graceful one.
 
 Flags:
   --url <url>                   Base app URL (default: http://localhost:5173)
@@ -91,7 +94,7 @@ const durationSec = parsed.values.duration ? parseInt(parsed.values.duration, 10
 const headless = parsed.values.headless !== 'false';
 const nameOverride = parsed.values.name;
 
-if (!mode || !['host', 'swarm', 'e2e', 'observe', 'transfer'].includes(mode)) {
+if (!mode || !['host', 'swarm', 'e2e', 'observe', 'transfer', 'crash'].includes(mode)) {
   console.error('Error: missing or invalid --mode. Run with --help for options.');
   process.exit(1);
 }
@@ -425,6 +428,87 @@ async function runTransfer(browser) {
   await new Promise(() => {});
 }
 
+// Unplanned-disconnect simulation: host creates room, N clients join, then
+// the host's page is killed abruptly (no HOST_LEAVING broadcast). Exercises
+// heartbeat detection → Option A probe → handleHostDisconnect → migration
+// path, which transfer mode does NOT cover (that one fires HOST_LEAVING).
+async function runCrash(browser) {
+  const clientCount = count || 3;
+  console.log(`Crash scenario: 1 host + ${clientCount} clients at ${baseUrl}`);
+
+  const hostPage = await openPage(browser, { isolated: false });
+  hostPage.on('console', (msg) => console.log('[Host]', msg.text().slice(0, 250)));
+  hostPage.on('pageerror', (err) => console.log('[Host] pageerror:', err.message));
+
+  await hostPage.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+  await fillName(hostPage, 'Host');
+  await clickSlot(hostPage, 'home-create');
+  await waitForRoomRender(hostPage);
+  const roomId = await getRoomIdFromUrl(hostPage);
+  console.log(`Host created room ${roomId}\n`);
+
+  const joinUrl = `${baseUrl}/?room=${roomId}`;
+  const clientPages = [];
+  for (let i = 0; i < clientCount; i++) {
+    const name = `Tester${String(i + 1).padStart(2, '0')}`;
+    const page = await spawnSwarmClient(browser, name, joinUrl, { verbose: true });
+    clientPages.push({ name, page });
+    await delay(1500);
+  }
+
+  console.log('\nLetting JOINs settle for 5 s...');
+  await delay(5000);
+
+  // Abrupt kill — no HOST_LEAVING, just the tab vanishing mid-session.
+  // Closing the page tears down the Peer's WebSocket but skips the normal
+  // teardown listeners, which is exactly what a real crash looks like from
+  // each client's perspective.
+  console.log('\n>>> Closing host page without any graceful leave <<<');
+  await hostPage.close();
+
+  console.log('\nObserving clients for 30 s while migration runs...');
+  await delay(30000);
+
+  const snap = async (page, label) => {
+    const data = await page
+      .evaluate(() => {
+        const status = document
+          .querySelector('[data-slot="connection-status"]')
+          ?.getAttribute('data-status');
+        const roomBanner = document
+          .querySelector('[data-slot="copy-room-id"]')
+          ?.textContent?.trim();
+        const inRoom = !!document.querySelector('[data-slot="hand-card"]');
+        const pillText = document
+          .querySelector('[data-slot="players-pill"]')
+          ?.textContent?.trim();
+        const playerCount = pillText ? (pillText.match(/\d+/)?.[0] ?? null) : null;
+        return { status, roomBanner, inRoom, playerCount };
+      })
+      .catch(() => null);
+    console.log(`[${label}]`, JSON.stringify(data));
+    return data;
+  };
+
+  console.log('\n>>> Final snapshots (host excluded — it was killed) <<<');
+  const clientSnaps = [];
+  for (const { name, page } of clientPages) {
+    clientSnaps.push({ name, snap: await snap(page, name) });
+  }
+
+  const expectedCount = clientCount; // host is gone
+  const allInRoom = clientSnaps.every((c) => c.snap?.inRoom);
+  const countMatches = clientSnaps.every(
+    (c) => String(c.snap?.playerCount) === String(expectedCount)
+  );
+  console.log(
+    `\nResult: allInRoom=${allInRoom} playerCountMatches=${countMatches} expected=${expectedCount}`
+  );
+
+  console.log('\nDone. Ctrl+C to exit.');
+  await new Promise(() => {});
+}
+
 async function main() {
   const browser = await puppeteer.launch({
     headless,
@@ -453,6 +537,9 @@ async function main() {
         break;
       case 'transfer':
         await runTransfer(browser);
+        break;
+      case 'crash':
+        await runCrash(browser);
         break;
     }
   } finally {
