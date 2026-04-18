@@ -65,12 +65,19 @@ class PeerManager {
       this.peer = specificPeerId ? new Peer(specificPeerId, opts) : new Peer(opts);
 
       let initResolved = false;
+      // Track whether THIS peer reached 'open' at least once. A brand-new
+      // peer that errors before opening (e.g. `unavailable-id`) also
+      // fires 'disconnected' — we must not try to reconnect it.
+      let hasOpened = false;
+      // Capture the peer ref so the listener can detect if it's stale
+      // (another peer replaced it via a later init()).
+      const ownedPeer = this.peer;
 
       this.peer.on('open', (id) => {
         console.log('[peerManager] peer open, id=', id);
+        hasOpened = true;
         if (initResolved) {
-          // This `open` comes from a successful peer.reconnect() after a
-          // broker WebSocket drop. Status should flip back to green.
+          // Re-open after peer.reconnect() — restore the green dot.
           usePokerStore.getState().setConnectionStatus('connected');
         }
         initResolved = true;
@@ -83,25 +90,25 @@ class PeerManager {
       });
 
       this.peer.on('disconnected', () => {
-        // Intentional teardown (leave / transferHost). peer.reconnect()
-        // here would keep the old peer ID alive on the broker and block
-        // the successor from reclaiming it during migration.
+        // Guards that must ALL be true before we try to re-register:
+        //   1. Not a stale peer (a newer one has taken over already).
+        //   2. The peer actually reached 'open' at some point.
+        //   3. Not intentionally tearing down (leave / transferHost).
+        //   4. Peer still exists and hasn't been destroyed.
+        if (ownedPeer !== this.peer) return;
+        if (!hasOpened) return;
         if (this.intentionalLeave) {
           console.warn('[peerManager] peer disconnected (intentional, skipping reconnect)');
           return;
         }
-        // Broker WebSocket dropped. Existing DataConnections survive, but
-        // no new ones can be created until we re-register. UI goes yellow
-        // and PeerJS's built-in reconnect retries the broker with the same
-        // peer ID.
+        if (!this.peer || this.peer.destroyed) return;
+
         console.warn('[peerManager] peer disconnected from broker, reconnecting');
         usePokerStore.getState().setConnectionStatus('reconnecting');
-        if (this.peer && !this.peer.destroyed) {
-          try {
-            this.peer.reconnect();
-          } catch (err) {
-            console.error('[peerManager] peer.reconnect() failed:', err);
-          }
+        try {
+          this.peer.reconnect();
+        } catch (err) {
+          console.error('[peerManager] peer.reconnect() failed:', err);
         }
       });
       this.peer.on('close', () => {
