@@ -1,6 +1,5 @@
-import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { LogOut, Copy, Check, RotateCcw, Eye, Home as HomeIcon } from 'lucide-react';
+import { RotateCcw, Eye } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { usePokerStore, type CardValue } from '../store/usePokerStore';
@@ -60,25 +59,11 @@ function HandCard({
 }
 
 export default function Room() {
-  const { roomId, hostId, playerId, players, isRevealed, isConnected } = usePokerStore();
-  const [copied, setCopied] = useState(false);
+  const { hostId, playerId, players, isRevealed } = usePokerStore();
 
   const amIHost = hostId === playerId;
   const myPlayer = players[playerId];
   const allPlayers = Object.values(players).sort((a, b) => a.joinedAt - b.joinedAt);
-
-  const handleCopy = () => {
-    if (roomId) {
-      navigator.clipboard.writeText(window.location.href);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
-  const handleLeave = () => {
-    peerManager.leave();
-    usePokerStore.getState().leaveRoom();
-  };
 
   const selectCard = (card: CardValue) => {
     if (isRevealed) return;
@@ -95,54 +80,6 @@ export default function Room() {
 
   return (
     <div className="flex flex-col h-full gap-6">
-      {/* Top Bar */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 gap-3">
-        <div className="flex items-center gap-4 flex-wrap">
-          <button
-            onClick={handleLeave}
-            className="p-2 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition"
-            title="Back to home"
-          >
-            <HomeIcon className="w-4 h-4" />
-          </button>
-
-          <div className="flex flex-col">
-            <span className="text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400">
-              Room ID
-            </span>
-            <div className="flex items-center gap-2">
-              <span className="font-mono font-bold text-lg tracking-wider">{roomId}</span>
-              <button
-                onClick={handleCopy}
-                className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition text-gray-500"
-                title="Copy invite link"
-              >
-                {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
-
-          <div className="h-10 w-px bg-gray-200 dark:bg-gray-700 hidden md:block" />
-
-          <div className="flex flex-col">
-            <span className="text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400">
-              Status
-            </span>
-            <span className={cn('font-medium', isConnected ? 'text-green-500' : 'text-red-500')}>
-              {isConnected ? 'Connected' : 'Disconnected'}
-            </span>
-          </div>
-        </div>
-
-        <button
-          onClick={handleLeave}
-          className="flex items-center gap-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 px-4 py-2 rounded-lg transition font-medium"
-        >
-          <LogOut className="w-4 h-4" />
-          Leave Room
-        </button>
-      </div>
-
       {/* Main: Table on left, Statistics on right (lg) */}
       <div className="flex flex-col lg:flex-row gap-6 flex-1 min-h-0">
         <div className="flex-1 flex flex-col gap-4 min-w-0">

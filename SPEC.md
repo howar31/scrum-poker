@@ -50,6 +50,7 @@ A purely frontend, serverless Peer-to-Peer (P2P) Scrum Poker application. It lev
 
 ### 6. Room Layout (Table + Hand + Stats)
 
+- **App header** (`src/App.tsx`) — single horizontal bar that doubles as the room header when `roomId` is set. Contains: Scrum Poker logo, Room ID button (click = copy Room ID), link icon button (click = copy invite URL), a small connection dot (green/red with pulse when disconnected), animations toggle (`Sparkles`), theme toggle, and a Leave button. There is no longer a separate in-room top bar — the room header lives in the app header to save vertical space.
 - **Table** (`src/components/Table.tsx`) — green-felt surface with all players' played cards arranged in a responsive `flex-wrap` row. Each card is rotated ±6° based on a deterministic hash of `player.id`, so the same player's card always leans the same direction but different players lean differently, producing an organic "cards tossed on a table" feel without risking upside-down cards.
 - **Statistics** (`src/components/Statistics.tsx`) — right-side panel driven by `src/utils/stats.ts`:
   - Pre-reveal: voting progress (`X / Y voted`) with animated bar.
@@ -89,7 +90,7 @@ A purely frontend, serverless Peer-to-Peer (P2P) Scrum Poker application. It lev
 
 - `src/components/`: React UI components.
   - `Home.tsx` — URL-driven Create vs Join entry
-  - `Room.tsx` — top bar, Table + Statistics layout, bottom hand rail
+  - `Room.tsx` — Table + Statistics layout, bottom hand rail (room-level chrome lives in `App.tsx` header)
   - `Table.tsx` — felt table with tilted player cards
   - `Statistics.tsx` — voting progress + post-reveal aggregates
   - `Card.tsx` — display card with tilt, foil, physical flip, smoke
