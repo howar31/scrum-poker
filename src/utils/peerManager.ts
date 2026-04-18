@@ -27,6 +27,11 @@ const RECONNECT_DELAYS_MS = [1000, 2000, 4000, 8000, 16000]; // exp backoff, 5 a
 // attempt is immediate; remaining attempts wait for the PeerJS signaling
 // server to release the old host's ID (heartbeat grace period).
 const RECLAIM_DELAYS_MS = [0, 1000, 2000, 4000, 8000];
+// After a reclaim, wait this long for remaining clients to finish their
+// scheduleReconnect retries and land on the new host before sweeping any
+// players who never showed up. Covers RECONNECT_DELAYS_MS (~31 s total)
+// plus a small buffer.
+const GHOST_CLEANUP_DELAY_MS = 20000;
 
 class PeerManager {
   private peer: Peer | null = null;
@@ -35,6 +40,7 @@ class PeerManager {
   private isHost: boolean = false;
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private ghostCleanupTimer: ReturnType<typeof setTimeout> | null = null;
   private intentionalLeave = false;
   // Guards against infinite migration loops — if a client's scheduleReconnect
   // hits handleHostDisconnect twice in a row without a successful join, give
@@ -565,6 +571,11 @@ class PeerManager {
           variant: 'success',
         });
         this.broadcastState();
+        // The players map carries over from the previous host broadcast, but
+        // our connections map is empty. Schedule a sweep to drop anyone who
+        // never reconnects (e.g. the crashed old host). Live clients land
+        // back on us via their scheduleReconnect within this window.
+        this.scheduleGhostCleanup();
         return;
       } catch (err) {
         console.warn(
@@ -583,6 +594,47 @@ class PeerManager {
     });
     usePokerStore.getState().setMigrationPhase('idle');
     usePokerStore.getState().leaveRoom();
+  }
+
+  // Arm a one-shot sweep GHOST_CLEANUP_DELAY_MS after a successful reclaim.
+  // The per-connection `conn.on('close')` path removes players as they drop,
+  // but after reclaim the connections map starts empty while the players
+  // map retains everyone from the previous host's broadcast — including the
+  // crashed old host. Live clients reconnect via scheduleReconnect and end
+  // up in this.connections; anyone still absent when the timer fires was
+  // genuinely gone. Self-promoted transfers work too: the demoting host
+  // rejoins as a client well within the window.
+  private scheduleGhostCleanup() {
+    if (this.ghostCleanupTimer) clearTimeout(this.ghostCleanupTimer);
+    this.ghostCleanupTimer = setTimeout(() => {
+      this.ghostCleanupTimer = null;
+      this.runGhostCleanup();
+    }, GHOST_CLEANUP_DELAY_MS);
+  }
+
+  private runGhostCleanup() {
+    if (!this.isHost) return;
+    const state = usePokerStore.getState();
+    const activePeerIds = new Set(this.connections.keys());
+    const newPlayers = { ...state.players };
+    const removed: string[] = [];
+    for (const [pid, player] of Object.entries(newPlayers)) {
+      if (pid === state.playerId) continue; // never remove self
+      if (!activePeerIds.has(player.peerId)) {
+        delete newPlayers[pid];
+        removed.push(player.name);
+      }
+    }
+    if (removed.length === 0) return;
+    console.log('[peerManager] ghost cleanup removing:', removed);
+    usePokerStore.getState().updateRoomState({ players: newPlayers });
+    removed.forEach((name) => {
+      usePokerStore.getState().pushToast({
+        message: i18n.t('toast.playerOffline', { name }),
+        variant: 'warning',
+      });
+    });
+    this.broadcastState();
   }
 
   // Manual host transfer (Host clicks "Make host" on another player).
@@ -669,6 +721,10 @@ class PeerManager {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
+    }
+    if (this.ghostCleanupTimer) {
+      clearTimeout(this.ghostCleanupTimer);
+      this.ghostCleanupTimer = null;
     }
     this.reconnectAttempt = 0;
 

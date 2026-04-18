@@ -34,4 +34,5 @@ See `SPEC.md` for detailed architecture, state management, and P2P implementatio
 - Unplanned host disconnect: `scheduleReconnect` (5 attempts, ~31 s) then `handleHostDisconnect` computes the successor.
 - Graceful host leave: the leaving host broadcasts `HOST_LEAVING { nextHostId }` before `destroy()`; the leaving host is the **authoritative** decider, clients never recompute. Skips the 31 s grace period.
 - New host (unplanned disconnect, graceful leave, or manual `transferHost`) calls `reclaimHostIdentity(roomId)` to take over `scrum-poker-{roomId}` so late joiners and remaining clients can find them at the well-known peer ID. `migrationPhase` drives the UI overlay (`idle` / `reclaiming` / `waiting`).
+- After a reclaim, `scheduleGhostCleanup` (20 s one-shot) sweeps any players whose `peerId` isn't in the new host's `connections` — catches the crashed old host and any other peers who didn't rejoin.
 - UI-initiated leave calls `peerManager.leave()`; internal cleanup uses `peerManager.destroy()` — they differ in whether they cancel pending reconnects and broadcast `HOST_LEAVING`.

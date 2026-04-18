@@ -46,6 +46,7 @@ A purely frontend, serverless Peer-to-Peer (P2P) Scrum Poker application. It lev
 
 - Because `playerId` is persisted, a client that refreshes or briefly disconnects rejoins under the same identity. The Host's `processAction` JOIN handler detects this: if the incoming `playerId` already exists in `players`, it updates `peerId` and `name` but preserves `joinedAt` (keeping host-election ordering stable), and emits a `{name} 已重新連上` toast. If the player is new, a `{name} 已加入` toast is shown.
 - When a client connection closes on the Host side, the Host looks up the player by matching `peerId`. The player is removed and a `{name} 已離線` toast is broadcast.
+- **Ghost cleanup after reclaim**: The per-connection close handler covers normal disconnects, but after a reclaim the new host's `connections` map starts empty while the `players` map still carries everyone from the previous host's last broadcast — including the crashed old host. `reclaimHostIdentity` schedules a one-shot `scheduleGhostCleanup` (20 s) on success: live clients land back via their own reconnect loops within that window, and anyone whose `peerId` still isn't in `connections.keys()` when the timer fires gets removed + toasted as offline. The manual `transferHost` path benefits from the same sweep — the demoting host rejoins as a client well before the 20 s mark, so they're never flagged. No periodic sweep; WebRTC's own ICE consent checks (~15–30 s) eventually fire `conn.on('close')` for genuinely gone peers, so ghosts self-heal outside the reclaim window.
 
 ### 5. Arc Browser Support
 
