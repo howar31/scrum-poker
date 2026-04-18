@@ -7,6 +7,16 @@
     "linkCopied": "已複製邀請連結",
     "connected": "已連線",
     "disconnected": "已斷線",
+    "status": {
+      "connected": "已連線",
+      "reconnecting": "連線中",
+      "disconnected": "已斷線"
+    },
+    "statusDetail": {
+      "connected": "你在房間中連線正常。",
+      "reconnecting": "正在重新建立連線,既有資料可能仍可傳輸。",
+      "disconnected": "連線中斷。若持續無法恢復,請重新整理或開新房間。"
+    },
     "disableAnimations": "關閉動畫",
     "enableAnimations": "開啟動畫",
     "toggleTheme": "切換主題",

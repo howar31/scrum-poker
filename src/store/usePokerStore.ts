@@ -28,12 +28,17 @@ export interface Toast {
 
 export type MigrationPhase = 'idle' | 'reclaiming' | 'waiting';
 
+export type ConnectionStatus =
+  | 'connected' // fully live: PeerJS signaling registered AND P2P working
+  | 'reconnecting' // signaling or P2P being re-established; existing data may still flow
+  | 'disconnected'; // all recovery paths failed
+
 interface PokerState extends RoomState {
   playerId: string;
   playerName: string;
   animationsEnabled: boolean;
   theme: 'light' | 'dark';
-  isConnected: boolean;
+  connectionStatus: ConnectionStatus;
   error: string | null;
   toasts: Toast[];
   migrationPhase: MigrationPhase;
@@ -43,7 +48,7 @@ interface PokerState extends RoomState {
   setPlayerName: (name: string) => void;
   setAnimationsEnabled: (enabled: boolean) => void;
   toggleTheme: () => void;
-  setConnected: (connected: boolean) => void;
+  setConnectionStatus: (status: ConnectionStatus) => void;
   setError: (error: string | null) => void;
   pushToast: (toast: Omit<Toast, 'id'>) => void;
   dismissToast: (id: string) => void;
@@ -68,7 +73,7 @@ export const usePokerStore = create<PokerState>()(
       playerName: '',
       animationsEnabled: true,
       theme: 'dark',
-      isConnected: false,
+      connectionStatus: 'disconnected',
       error: null,
       toasts: [],
       migrationPhase: 'idle',
@@ -77,7 +82,7 @@ export const usePokerStore = create<PokerState>()(
       setPlayerName: (name) => set({ playerName: name }),
       setAnimationsEnabled: (enabled) => set({ animationsEnabled: enabled }),
       toggleTheme: () => set((state) => ({ theme: state.theme === 'light' ? 'dark' : 'light' })),
-      setConnected: (connected) => set({ isConnected: connected, error: null }),
+      setConnectionStatus: (status) => set({ connectionStatus: status, error: null }),
       setError: (error) => set({ error }),
       pushToast: (toast) =>
         set((state) => ({
@@ -94,7 +99,7 @@ export const usePokerStore = create<PokerState>()(
           hostId: null,
           players: {},
           isRevealed: false,
-          isConnected: false,
+          connectionStatus: 'disconnected',
           migrationPhase: 'idle',
         }),
     }),

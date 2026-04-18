@@ -68,6 +68,11 @@ class PeerManager {
 
       this.peer.on('open', (id) => {
         console.log('[peerManager] peer open, id=', id);
+        if (initResolved) {
+          // This `open` comes from a successful peer.reconnect() after a
+          // broker WebSocket drop. Status should flip back to green.
+          usePokerStore.getState().setConnectionStatus('connected');
+        }
         initResolved = true;
         resolve(id);
       });
@@ -77,8 +82,27 @@ class PeerManager {
         this.handleIncomingConnection(conn);
       });
 
-      this.peer.on('disconnected', () => console.warn('[peerManager] peer disconnected'));
-      this.peer.on('close', () => console.warn('[peerManager] peer closed'));
+      this.peer.on('disconnected', () => {
+        // Broker WebSocket dropped. Existing DataConnections survive, but
+        // no new ones can be created until we re-register. UI goes yellow
+        // and PeerJS's built-in reconnect retries the broker with the same
+        // peer ID.
+        console.warn('[peerManager] peer disconnected from broker, reconnecting');
+        usePokerStore.getState().setConnectionStatus('reconnecting');
+        if (this.peer && !this.peer.destroyed) {
+          try {
+            this.peer.reconnect();
+          } catch (err) {
+            console.error('[peerManager] peer.reconnect() failed:', err);
+          }
+        }
+      });
+      this.peer.on('close', () => {
+        console.warn('[peerManager] peer closed');
+        // `close` fires once the Peer is fully torn down (usually from our
+        // own destroy()). Don't flip status here — the teardown path has
+        // already set the appropriate final state.
+      });
 
       this.peer.on('error', (err) => {
         console.error('[peerManager] peer error:', err.type, err.message);
@@ -134,7 +158,7 @@ class PeerManager {
       isRevealed: false,
     });
 
-    usePokerStore.getState().setConnected(true);
+    usePokerStore.getState().setConnectionStatus('connected');
     console.log('[peerManager] createRoom: ready, roomId=', roomId);
   }
 
@@ -210,7 +234,7 @@ class PeerManager {
 
       const setupConnection = () => {
         console.log('[peerManager] joinRoom: conn.open fired, sending JOIN');
-        usePokerStore.getState().setConnected(true);
+        usePokerStore.getState().setConnectionStatus('connected');
         usePokerStore.getState().setMigrationPhase('idle');
 
         const { playerId, playerName } = usePokerStore.getState();
@@ -405,7 +429,7 @@ class PeerManager {
 
     const delay = RECONNECT_DELAYS_MS[this.reconnectAttempt];
     const attemptNumber = this.reconnectAttempt + 1;
-    usePokerStore.getState().setConnected(false);
+    usePokerStore.getState().setConnectionStatus('reconnecting');
     usePokerStore.getState().pushToast({
       message: i18n.t('toast.connectionLost', {
         attempt: attemptNumber,
@@ -452,7 +476,7 @@ class PeerManager {
     const { playerId, roomId, players } = usePokerStore.getState();
     if (!roomId) return;
 
-    usePokerStore.getState().setConnected(false);
+    usePokerStore.getState().setConnectionStatus('reconnecting');
 
     // No successor — room is closing down with the host.
     if (!nextHostId) {
@@ -484,7 +508,7 @@ class PeerManager {
   }
 
   private async handleHostDisconnect() {
-    usePokerStore.getState().setConnected(false);
+    usePokerStore.getState().setConnectionStatus('reconnecting');
 
     const state = usePokerStore.getState();
     const { players, playerId, roomId } = state;
@@ -564,7 +588,7 @@ class PeerManager {
         this.reconnectAttempt = 0;
         this.migrationAttempted = false;
         usePokerStore.getState().updateRoomState({ hostId: playerId });
-        usePokerStore.getState().setConnected(true);
+        usePokerStore.getState().setConnectionStatus('connected');
         usePokerStore.getState().setMigrationPhase('idle');
         usePokerStore.getState().pushToast({
           message: i18n.t('toast.youAreHost'),

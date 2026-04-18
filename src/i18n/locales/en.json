@@ -7,6 +7,16 @@
     "linkCopied": "Invite link copied",
     "connected": "Connected",
     "disconnected": "Disconnected",
+    "status": {
+      "connected": "Connected",
+      "reconnecting": "Reconnecting",
+      "disconnected": "Disconnected"
+    },
+    "statusDetail": {
+      "connected": "You are live in the room.",
+      "reconnecting": "Re-establishing connection — existing data may still flow.",
+      "disconnected": "Lost connection. Refresh or create a new room if this persists."
+    },
     "disableAnimations": "Disable animations",
     "enableAnimations": "Enable animations",
     "toggleTheme": "Toggle theme",

@@ -12,7 +12,7 @@ function App() {
   const { t, i18n } = useTranslation();
   const {
     roomId,
-    isConnected,
+    connectionStatus,
     theme,
     toggleTheme,
     animationsEnabled,
@@ -146,12 +146,28 @@ function App() {
               >
                 <Link2 className="w-4 h-4" />
               </button>
-              <span
-                className={`inline-block w-2 h-2 rounded-full ml-1 ${
-                  isConnected ? 'bg-green-500' : 'bg-red-500 animate-pulse'
+              <button
+                type="button"
+                onClick={() =>
+                  pushToast({
+                    message: `${t(`app.status.${connectionStatus}`)} — ${t(`app.statusDetail.${connectionStatus}`)}`,
+                    variant:
+                      connectionStatus === 'connected'
+                        ? 'success'
+                        : connectionStatus === 'reconnecting'
+                          ? 'info'
+                          : 'warning',
+                  })
+                }
+                className={`inline-block w-2.5 h-2.5 rounded-full ml-1 transition ${
+                  connectionStatus === 'connected'
+                    ? 'bg-green-500'
+                    : connectionStatus === 'reconnecting'
+                      ? 'bg-amber-400 animate-pulse'
+                      : 'bg-red-500 animate-pulse'
                 }`}
-                title={isConnected ? t('app.connected') : t('app.disconnected')}
-                aria-label={isConnected ? t('app.connected') : t('app.disconnected')}
+                title={`${t(`app.status.${connectionStatus}`)} — ${t(`app.statusDetail.${connectionStatus}`)}`}
+                aria-label={t(`app.status.${connectionStatus}`)}
               />
             </div>
           )}
