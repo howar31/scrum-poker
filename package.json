@@ -12,7 +12,10 @@
     "e2e:host": "node scripts/e2e.js --mode host",
     "e2e:swarm": "node scripts/e2e.js --mode swarm",
     "e2e:check": "node scripts/e2e.js --mode e2e",
-    "e2e:observe": "node scripts/e2e.js --mode observe"
+    "e2e:observe": "node scripts/e2e.js --mode observe",
+    "e2e:transfer": "node scripts/e2e.js --mode transfer",
+    "e2e:crash": "node scripts/e2e.js --mode crash",
+    "e2e:kick": "node scripts/e2e.js --mode kick"
   },
   "dependencies": {
     "clsx": "^2.1.1",

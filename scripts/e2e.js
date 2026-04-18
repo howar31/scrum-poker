@@ -26,26 +26,61 @@ Scrum Poker E2E driver
 
 Usage:
   node scripts/e2e.js --mode <mode> [flags]
+  (or: npm run e2e:<mode> -- [flags])
+
+Prerequisites:
+  Either run 'npm run dev' first (default target http://localhost:5173),
+  or pass --url pointing at a deployed build.
 
 Modes:
-  host      Create a room and stay alive. Prints the Room ID on success.
-  swarm     Spawn N clients that join an existing --room and randomly vote.
-  e2e       Create a host + spawn N clients, assert host sees all of them, exit.
-  observe   Single silent client that joins --room and forwards console logs.
-  transfer  host + N clients (default 2) + bot-driven host transfer from host to
-            Tester01, all verbose. Diagnostic-only; exits after observation.
-  crash     host + N clients (default 3), then kill the host page abruptly
-            (no HOST_LEAVING) so migration is driven by heartbeat + handleHostDisconnect.
-            Verifies the unplanned-disconnect path rather than the graceful one.
-  kick      host + N clients (default 3), host kicks Tester01, asserts
-            Tester01 lands on Home and survivors show the reduced playerCount.
-            Verifies the reconnect loop isn't too eager (kicked player
-            shouldn't pop right back in).
+  host      npm run e2e:host      [no exit, SIGINT to stop]
+            Create a room and stay alive. Prints the Room ID on success.
+            --duration <sec> makes it finite. Passes when: Room ID printed.
+
+  swarm     npm run e2e:swarm     [no exit, SIGINT to stop]
+            Spawn N clients that join an existing --room and randomly vote.
+            Requires --room. --verbose N forwards browser console from the
+            first N clients. Passes when: all clients visible in the host.
+
+  e2e       npm run e2e:check     [EXITS with code 0 or 1]
+            Create host + spawn N clients, assert host DOM shows every
+            TesterNN name, exit. Suitable for CI.
+
+  observe   npm run e2e:observe   [no exit, SIGINT to stop]
+            Single silent client joins --room and forwards browser console
+            + pageerrors. Debug helper.
+
+  transfer  npm run e2e:transfer  [no exit, SIGINT to stop]
+            host + N clients (default 2), bot-driven graceful host transfer
+            from host to Tester01. Exercises HOST_LEAVING + ACK + direct-
+            connect + background well-known reclaim.
+            Passes when the final line prints:
+              Result: allInRoom=true playerCountMatches=true expected=<N+1>
+
+  crash     npm run e2e:crash     [no exit, SIGINT to stop]
+            host + N clients (default 3), closes the host page abruptly
+            (no HOST_LEAVING). Exercises heartbeat watchdog → probe →
+            handleHostDisconnect → self-promote + direct/well-known reconnect.
+            Passes when the final line prints:
+              Result: allInRoom=true playerCountMatches=true expected=<N>
+
+  kick      npm run e2e:kick      [no exit, SIGINT to stop]
+            host + N clients (default 3), host kicks Tester01 and waits
+            past the 5 s reject window. Regression guard for the
+            "kicked-but-auto-rejoins" bug.
+            Passes when the final line prints:
+              Result: tester01Left=true survivorsInRoom=true playerCountMatches=true
+
+  Only 'e2e' (npm run e2e:check) sets an exit code. For the other
+  assertion modes (transfer / crash / kick), grep the stdout for the
+  Result line or pipe to a shell check, e.g.:
+    npm run e2e:transfer -- --count 3 2>&1 | tee out.log
+    grep -q 'allInRoom=true playerCountMatches=true' out.log && echo OK
 
 Flags:
   --url <url>                   Base app URL (default: http://localhost:5173)
   --room <id>                   Room ID (required for swarm / observe)
-  --count <n>                   Number of clients for swarm / e2e (default: 10)
+  --count <n>                   Number of clients for swarm / e2e / transfer / crash / kick
   --verbose <n>                 Forward full browser console for the first N swarm clients (default: 0)
   --vote-probability <0..1>     Chance each swarm client votes (default: 0.7)
   --stagger <ms>                Delay between spawning each swarm client (default: 2500)
@@ -55,12 +90,19 @@ Flags:
   --help                        Show this message
 
 Examples:
-  node scripts/e2e.js --mode host --url https://lab.howar31.com/scrum-poker
-  node scripts/e2e.js --mode swarm --url https://lab.howar31.com/scrum-poker \\
-    --room Y8QEZCS --count 10
-  # 10 clients, first 2 forward full console — useful for host-transfer debugging
-  node scripts/e2e.js --mode swarm --room XXX --count 10 --verbose 2
-  npm run e2e:check -- --url http://localhost:5173 --count 5
+  # CI-style exit-code assertion
+  npm run e2e:check -- --count 5
+
+  # Migration regression suite against a local dev server
+  npm run e2e:transfer -- --count 3
+  npm run e2e:crash -- --count 3
+  npm run e2e:kick -- --count 3
+
+  # Load-test: 10 random-voting clients against a deployed build
+  npm run e2e:swarm -- --url https://lab.howar31.com/scrum-poker --room ABC1234 --count 10
+
+  # Swarm + forward console from the first 2 clients
+  npm run e2e:swarm -- --room XXX --count 10 --verbose 2
 `;
 
 // ---- CLI parsing -------------------------------------------------------

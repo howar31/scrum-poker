@@ -104,16 +104,35 @@ Goal: **existing members reunited in ≈ 10 s** regardless of how long the PeerJ
 
 ## End-to-End Harness
 
-`scripts/e2e.js` is a Puppeteer-based CLI for driving the app through real browsers — smoke tests, multi-client load simulation, and debug observation. It replaces the old `test-host.js` / `test-live.js` / `test-live-e2e.js` / `test-10-clients.js` scripts.
+`scripts/e2e.js` is a Puppeteer-based CLI for driving the app through real browsers — smoke tests, multi-client load simulation, debug observation, and P2P migration regression coverage. It replaces the old `test-host.js` / `test-live.js` / `test-live-e2e.js` / `test-10-clients.js` scripts.
 
-- **`host`** — one browser creates a room via the Create CTA, prints the Room ID, keeps the page open. Supports `--duration` for a finite-lifetime smoke test.
-- **`swarm`** — N isolated browser contexts join an existing `--room` (each context has its own localStorage so zustand's persisted `playerId` doesn't collide). Each client randomly votes with probability `--vote-probability`. Stays alive until SIGINT.
-- **`e2e`** — host creates a room, N clients join, after a settle delay the script reads the host's DOM and asserts the `TesterNN` names appear. Exits with 0 on pass, 1 on fail — suitable for CI.
-- **`observe`** — single client joins `--room` and forwards browser console + page errors. Used for debugging PeerJS / migration issues.
-- **`crash`** — host + N clients; after join settles, closes the host page abruptly (no HOST_LEAVING) to exercise the unplanned-disconnect migration path (heartbeat → probe → handleHostDisconnect → self-promote + alternating direct/well-known reconnect). Counterpart to `transfer`, which exercises the graceful path.
-- **`kick`** — host + N clients; host kicks Tester01 via the Players panel, waits out the 5 s reject window. Asserts Tester01 is on Home (`home-create` / `home-join` slot visible) and the survivors still show the reduced `playerCount`. Catches regressions where the reconnect loop was too eager and kicked players popped right back in.
+### Prerequisites
 
-Entry points: `npm run e2e`, `e2e:host`, `e2e:swarm`, `e2e:check`, `e2e:observe` — pass flags after `--` (`npm run e2e:swarm -- --room XXX --count 5`). There's also a `transfer` mode (`node scripts/e2e.js --mode transfer --count 2`) that spins up one host + N verbose clients, drives a two-click host transfer from the host to Tester01, then observes for 20 s — catches broker-reconnect races, reclaim timing, and `player-make-host` UI flow all at once. Room entry is detected via `data-slot="hand-card"` on hand-rail buttons (language- and text-transform-agnostic). Swarm mode also accepts `--verbose N` to forward the full browser console for the first N clients — useful when debugging host migration, since every `peerManager` log from those bots is piped to the terminal prefixed with their name.
+Either a dev server (`npm run dev`; the script's default `--url` is `http://localhost:5173`) or a deployed build reachable via `--url https://your-deployment/`. Puppeteer is already a devDependency so `npm install` is enough — the first run downloads a Chromium.
+
+### Modes
+
+Each mode has both a `node scripts/e2e.js --mode <name>` form and an `npm run e2e:<name>` shortcut. Entry points registered in `package.json`: `e2e`, `e2e:host`, `e2e:swarm`, `e2e:check`, `e2e:observe`, `e2e:transfer`, `e2e:crash`, `e2e:kick`. Pass flags after `--`, e.g. `npm run e2e:swarm -- --room XXX --count 5`.
+
+- **`host`** — one browser creates a room via the Create CTA, prints the Room ID, keeps the page open. Supports `--duration` for a finite-lifetime smoke test. **Exits?** Only after `--duration` or SIGINT. **Asserts:** nothing — the `Room ID` print is the success signal.
+- **`swarm`** — N isolated browser contexts join an existing `--room` (each context has its own localStorage so zustand's persisted `playerId` doesn't collide). Each client randomly votes with probability `--vote-probability`. `--verbose N` forwards the full browser console from the first N bots (prefixed with their name) — useful when debugging host migration. **Exits?** SIGINT only. **Asserts:** nothing — manual observation.
+- **`e2e`** — host creates a room, N clients join, after a settle delay the script reads the host's DOM and asserts the `TesterNN` names appear. **Exits?** Yes, with status code 0 on pass / 1 on fail — suitable for CI. **Asserts:** every spawned client name is rendered in the host's players UI.
+- **`observe`** — single client joins `--room` and forwards browser console + page errors. Used for debugging PeerJS / migration issues. **Exits?** SIGINT only. **Asserts:** nothing.
+- **`transfer`** — host + N clients (verbose), host bot-clicks `player-make-host` on Tester01 twice (arm + confirm), observes for 20 s, snapshots every page. Exercises `HOST_LEAVING` + `HOST_LEAVING_ACK` + `directConnectToSuccessor` + background well-known reclaim end-to-end. **Exits?** SIGINT (leaves browsers open for post-mortem). **Asserts:** final `Result:` line prints `allInRoom=true playerCountMatches=true expected=<N+1>`.
+- **`crash`** — host + N clients, then `hostPage.close()` abruptly tears down the host tab without sending `HOST_LEAVING`. Drives the unplanned-disconnect path (heartbeat → probe → `handleHostDisconnect` → self-promote + alternating direct/well-known reconnect). Counterpart to `transfer`. **Exits?** SIGINT. **Asserts:** final `Result:` line prints `allInRoom=true playerCountMatches=true expected=<N>` (host excluded; it was killed).
+- **`kick`** — host + N clients, host bot-clicks `player-kick` on Tester01 twice (arm + confirm), then waits 10 s (past the 5 s `KICK_REJECT_WINDOW_MS`). Regression guard for the "reconnect loop too eager" bug where a kicked client's `onHostConnectionLost` → probe → JOIN would re-add them. **Exits?** SIGINT. **Asserts:** final `Result:` line prints `tester01Left=true survivorsInRoom=true playerCountMatches=true expected=<N>`. Tester01-side check is `onHome=true` (`home-create` or `home-join` slot visible) AND `inRoom=false`.
+
+### Interpreting results
+
+- `e2e:check` is the only mode with a real exit code. CI should prefer it.
+- For `transfer`, `crash`, `kick`, the assertion is the `Result:` line on stdout. These modes intentionally leave browsers alive for inspection (they don't `process.exit`). A CI wrapper should do something like:
+
+  ```bash
+  npm run e2e:transfer -- --count 3 2>&1 | tee out.log
+  grep -q 'allInRoom=true playerCountMatches=true' out.log || exit 1
+  ```
+
+- Room entry is detected via `data-slot="hand-card"` on hand-rail buttons (language- and text-transform-agnostic). All automation targets `data-slot` attributes — never text content — so i18n and CSS changes don't break tests.
 
 ### data-slot convention
 

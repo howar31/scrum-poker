@@ -53,23 +53,54 @@ npm run lint
 
 ### End-to-end browser automation
 
-A single Puppeteer script at `scripts/e2e.js` drives the app through real browsers for smoke-testing and load simulation. It targets `data-slot` attributes on the rendered controls so it's robust against i18n text changes and icon-only buttons. All modes accept `--url` (defaults to `http://localhost:5173`) and other flags — run `npm run e2e -- --help` for the full list.
+A single Puppeteer script at `scripts/e2e.js` drives the app through real browsers for smoke-testing, load simulation, and regression catching on the P2P migration paths. It targets `data-slot` attributes on the rendered controls so it's robust against i18n text changes, CSS text-transforms, and icon-only buttons.
+
+#### Prerequisites
+
+- Either `npm run dev` (default — script targets `http://localhost:5173`) or pass `--url https://your-deployment/` to point at a deployed build.
+- Puppeteer is already a devDependency; `npm install` is sufficient.
+
+#### Modes
+
+Every mode has an `e2e:<name>` npm shortcut. The full flag list is in `npm run e2e -- --help`. All modes accept `--url`, `--headless true|false`, and `--count <n>` where relevant.
+
+| Mode | Shortcut | Exits? | What it does | Passes when... |
+| --- | --- | --- | --- | --- |
+| `host` | `e2e:host` | No (SIGINT) | Creates a room, prints Room ID, keeps page open. `--duration <sec>` makes it finite. | Room ID printed to stdout. |
+| `swarm` | `e2e:swarm` | No (SIGINT) | Spawns `--count` clients into `--room`, each votes at `--vote-probability`. `--verbose N` forwards the full browser console from the first N clients. | Clients join; kill with Ctrl-C. |
+| `e2e` | `e2e:check` | **Yes (0/1)** | Host + N clients join, host's DOM is inspected; asserts every `TesterNN` name is visible. Suitable for CI. | Exit code 0. |
+| `observe` | `e2e:observe` | No (SIGINT) | Single silent client joins `--room` and forwards browser console + page errors. Debug helper. | Manual — watch the console. |
+| `transfer` | `e2e:transfer` | No (SIGINT) | Host + N clients, bot-driven graceful host transfer from Host → Tester01. Covers `HOST_LEAVING` + ACK + direct-connect + background well-known reclaim. | Final `Result:` line shows `allInRoom=true playerCountMatches=true`. |
+| `crash` | `e2e:crash` | No (SIGINT) | Host + N clients, then the host page is closed abruptly (no `HOST_LEAVING`). Exercises the unplanned-disconnect path: heartbeat watchdog → Option A probe → `handleHostDisconnect` → self-promote + direct/well-known reconnect. | Final `Result:` line shows `allInRoom=true playerCountMatches=true` for the survivors. |
+| `kick` | `e2e:kick` | No (SIGINT) | Host kicks Tester01 via Players panel, waits past the 5 s reject window. Catches "kicked player auto-rejoins" regressions. | Final `Result:` line shows `tester01Left=true survivorsInRoom=true playerCountMatches=true`. |
+
+A "`Result:`" line on the final output of `transfer` / `crash` / `kick` with all fields `=true` means the scenario passed; any `false` field indicates a regression. These modes don't set an exit code — the script stays alive for browser inspection — so `grep -q "allInRoom=true"` (or similar) is the CI-friendly wrapper. `e2e:check` is the only mode that exits with a status code automatically.
+
+#### Examples
 
 ```bash
-# Create a room in a headless browser and keep it alive
-npm run e2e:host -- --url https://lab.howar31.com/scrum-poker
-
-# Spawn 10 clients into an existing room; each randomly votes
-npm run e2e:swarm -- --url https://lab.howar31.com/scrum-poker --room ABC1234 --count 10
-
-# Same, but forward the full browser console from the first 2 clients
-# (useful when debugging host migration or reconnect flow)
-npm run e2e:swarm -- --room ABC1234 --count 10 --verbose 2
-
-# Create host + 5 clients, assert host sees them all, exit with code 0/1
+# CI-style assertion: create host + 5 clients, exit 0/1
 npm run e2e:check -- --count 5
 
-# Silent single-client debug helper with console forwarding
+# Drive a graceful host transfer with 3 clients, watch all migrate
+npm run e2e:transfer -- --count 3
+
+# Simulate a host crash and verify survivors reunite
+npm run e2e:crash -- --count 3
+
+# Verify kicked player doesn't auto-rejoin
+npm run e2e:kick -- --count 3
+
+# Create a room on the deployed site and keep it alive
+npm run e2e:host -- --url https://lab.howar31.com/scrum-poker
+
+# Load-test: 10 random-voting clients into an existing room
+npm run e2e:swarm -- --url https://lab.howar31.com/scrum-poker --room ABC1234 --count 10
+
+# Same swarm but forward console from the first 2 clients for debugging
+npm run e2e:swarm -- --room ABC1234 --count 10 --verbose 2
+
+# Silent single-client debug helper with full console
 npm run e2e:observe -- --room ABC1234
 ```
 

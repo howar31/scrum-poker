@@ -9,7 +9,7 @@ See `SPEC.md` for detailed architecture, state management, and P2P implementatio
 - **Dev**: `npm run dev`
 - **Build**: `npm run build`
 - **Lint**: `npm run lint`
-- **E2E driver**: `npm run e2e -- --help` (browser automation via `scripts/e2e.js`). Shortcuts: `e2e:host`, `e2e:swarm`, `e2e:check`, `e2e:observe`. The swarm and observe modes need `--room`; swarm/e2e accept `--count`. Extra diagnostic modes (run via `node scripts/e2e.js --mode X`): `transfer` (bot-driven graceful host transfer), `crash` (abruptly closes the host page to exercise the unplanned-disconnect migration path — heartbeat → probe → handleHostDisconnect → self-promote), `kick` (host kicks Tester01, asserts they land on Home and don't auto-rejoin).
+- **E2E driver**: `npm run e2e -- --help` (browser automation via `scripts/e2e.js`). Seven modes, each with its own `npm run e2e:<mode>` shortcut: `host`, `swarm`, `check` (exit-code CI assertion of TesterNN visibility), `observe`, `transfer` (graceful HOST_LEAVING + ACK path), `crash` (abrupt host tab close → heartbeat migration path), `kick` (regression guard for kicked-but-auto-rejoins). `swarm` / `observe` require `--room`; the rest take optional `--count`. Migration modes (`transfer`/`crash`/`kick`) don't exit — their pass/fail is the `Result:` line on stdout. Full per-mode semantics + assertions: `SPEC.md` → "End-to-End Harness", or `npm run e2e -- --help`.
 
 ## Conventions
 
