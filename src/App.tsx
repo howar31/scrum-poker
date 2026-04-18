@@ -1,11 +1,11 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { usePokerStore } from './store/usePokerStore';
 import Home from './components/Home';
 import Room from './components/Room';
 import Toast from './components/Toast';
 import { peerManager } from './utils/peerManager';
-import { Sparkles, Moon, Sun, Link2, LogOut, Languages } from 'lucide-react';
+import { Sparkles, Moon, Sun, Link2, LogOut, Languages, MoreVertical } from 'lucide-react';
 
 function App() {
   const { t, i18n } = useTranslation();
@@ -18,6 +18,9 @@ function App() {
     setAnimationsEnabled,
     pushToast,
   } = usePokerStore();
+
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (theme === 'dark') {
@@ -36,6 +39,24 @@ function App() {
     }
     window.history.replaceState({}, '', url.toString());
   }, [roomId]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [menuOpen]);
 
   const handleCopyId = () => {
     if (!roomId) return;
@@ -63,8 +84,8 @@ function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[var(--color-background-light)] dark:bg-[var(--color-background-dark)] text-[var(--color-text-light)] dark:text-[var(--color-text-dark)] transition-colors duration-200">
-      <header className="px-4 py-3 flex flex-wrap justify-between items-center gap-3 border-b border-gray-200 dark:border-gray-800">
-        <div className="flex items-center gap-3 md:gap-4 min-w-0 flex-1">
+      <header className="px-4 py-3 flex justify-between items-center gap-3 border-b border-gray-200 dark:border-gray-800">
+        <div className="flex items-center gap-2 md:gap-4 min-w-0 flex-1">
           <h1 className="text-xl md:text-2xl font-bold bg-gradient-to-r from-blue-500 to-indigo-600 bg-clip-text text-transparent flex-shrink-0">
             {t('app.title')}
           </h1>
@@ -97,42 +118,80 @@ function App() {
           )}
         </div>
 
-        <div className="flex gap-1 md:gap-2 items-center flex-shrink-0">
-          <button
-            onClick={toggleLanguage}
-            className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition flex items-center gap-1 text-xs font-semibold"
-            title={t('app.switchLanguage')}
-            aria-label={t('app.switchLanguage')}
-          >
-            <Languages className="w-5 h-5" />
-            <span>{currentLangLabel}</span>
-          </button>
-          <button
-            onClick={() => setAnimationsEnabled(!animationsEnabled)}
-            className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition"
-            title={animationsEnabled ? t('app.disableAnimations') : t('app.enableAnimations')}
-            aria-label={animationsEnabled ? t('app.disableAnimations') : t('app.enableAnimations')}
-          >
-            <Sparkles className={`w-5 h-5 ${!animationsEnabled ? 'opacity-40' : ''}`} />
-          </button>
-          <button
-            onClick={toggleTheme}
-            className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition"
-            title={t('app.toggleTheme')}
-            aria-label={t('app.toggleTheme')}
-          >
-            {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-          </button>
+        <div className="flex gap-1 items-center flex-shrink-0">
           {roomId && (
             <button
               onClick={handleLeave}
-              className="flex items-center gap-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 px-3 py-2 rounded-lg transition font-medium text-sm"
+              className="flex items-center gap-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 px-2.5 sm:px-3 py-2 rounded-lg transition font-medium text-sm"
               title={t('app.leaveRoom')}
+              aria-label={t('app.leaveRoom')}
             >
               <LogOut className="w-4 h-4" />
               <span className="hidden sm:inline">{t('app.leave')}</span>
             </button>
           )}
+
+          <div ref={menuRef} className="relative">
+            <button
+              onClick={() => setMenuOpen((v) => !v)}
+              className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition"
+              title={t('app.menu')}
+              aria-label={t('app.menu')}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+            >
+              <MoreVertical className="w-5 h-5" />
+            </button>
+
+            {menuOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-40"
+              >
+                <button
+                  role="menuitem"
+                  onClick={toggleLanguage}
+                  className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition"
+                >
+                  <span className="flex items-center gap-2">
+                    <Languages className="w-4 h-4" />
+                    {t('app.language')}
+                  </span>
+                  <span className="font-semibold text-xs text-gray-500 dark:text-gray-400">
+                    {currentLangLabel}
+                  </span>
+                </button>
+
+                <button
+                  role="menuitem"
+                  onClick={() => setAnimationsEnabled(!animationsEnabled)}
+                  className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition"
+                >
+                  <span className="flex items-center gap-2">
+                    <Sparkles className={`w-4 h-4 ${!animationsEnabled ? 'opacity-40' : ''}`} />
+                    {t('app.animations')}
+                  </span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    {animationsEnabled ? t('app.on') : t('app.off')}
+                  </span>
+                </button>
+
+                <button
+                  role="menuitem"
+                  onClick={toggleTheme}
+                  className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition"
+                >
+                  <span className="flex items-center gap-2">
+                    {theme === 'dark' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+                    {t('app.theme')}
+                  </span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    {theme === 'dark' ? t('app.dark') : t('app.light')}
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 

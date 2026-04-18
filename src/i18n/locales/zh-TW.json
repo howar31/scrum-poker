@@ -12,7 +12,15 @@
     "toggleTheme": "切換主題",
     "switchLanguage": "切換語言",
     "leaveRoom": "離開房間",
-    "leave": "離開"
+    "leave": "離開",
+    "menu": "選單",
+    "language": "語言",
+    "animations": "動畫",
+    "theme": "主題",
+    "on": "開啟",
+    "off": "關閉",
+    "light": "淺色",
+    "dark": "深色"
   },
   "home": {
     "yourName": "你的名字",

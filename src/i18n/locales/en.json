@@ -12,7 +12,15 @@
     "toggleTheme": "Toggle theme",
     "switchLanguage": "Switch language",
     "leaveRoom": "Leave room",
-    "leave": "Leave"
+    "leave": "Leave",
+    "menu": "Menu",
+    "language": "Language",
+    "animations": "Animations",
+    "theme": "Theme",
+    "on": "On",
+    "off": "Off",
+    "light": "Light",
+    "dark": "Dark"
   },
   "home": {
     "yourName": "Your name",
