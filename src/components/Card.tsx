@@ -68,12 +68,8 @@ export default function Card({ card, isRevealed, isMe, revealIndex = 0, size = '
     stiffness: 220,
     damping: 18,
   });
-  // Holographic sheen angle follows pointerX so the rainbow band slides
-  // across the glass back as the mouse moves horizontally.
-  const foilAngle = useTransform(pointerX, [-0.5, 0.5], [30, 150]);
-  const foilBackground = useMotionTemplate`linear-gradient(${foilAngle}deg, transparent 8%, rgba(255,100,220,0.55) 26%, rgba(100,200,255,0.55) 42%, rgba(255,255,120,0.55) 58%, rgba(120,255,180,0.55) 74%, transparent 92%)`;
   // Specular highlight position tracks the pointer so the glass reflection
-  // "moves with your eyes" — classic holographic card effect.
+  // "moves with your eyes".
   const specularX = useTransform(pointerX, [-0.5, 0.5], ['20%', '80%']);
   const specularY = useTransform(pointerY, [-0.5, 0.5], ['20%', '80%']);
   const specularBackground = useMotionTemplate`radial-gradient(circle at ${specularX} ${specularY}, rgba(255,255,255,0.55), rgba(255,255,255,0) 50%)`;
@@ -192,7 +188,7 @@ export default function Card({ card, isRevealed, isMe, revealIndex = 0, size = '
             </div>
           </motion.div>
 
-          {/* Back face: glass with iridescent rainbow reflection */}
+          {/* Back face: glass reflection (no rainbow foil) */}
           <div
             className={cn(
               'absolute inset-0 backface-hidden [transform:rotateY(180deg)] rounded-lg',
@@ -207,28 +203,7 @@ export default function Card({ card, isRevealed, isMe, revealIndex = 0, size = '
                   'inset 0 1px 0 rgba(255,255,255,0.4), inset 0 -1px 0 rgba(255,255,255,0.08), 0 0 0 1px rgba(255,255,255,0.2)',
               }}
             >
-              {/* Layer 1: deep iridescent conic rainbow, heavily blurred */}
-              <div
-                className="absolute inset-0"
-                style={{
-                  background:
-                    'conic-gradient(from 45deg at 50% 50%, #ff44cc, #44ccff, #ffff44, #44ffaa, #cc44ff, #ff44cc)',
-                  filter: 'blur(36px)',
-                  mixBlendMode: 'screen',
-                  opacity: 0.55,
-                }}
-              />
-
-              {/* Layer 2: pointer-driven rainbow sheen */}
-              <motion.div
-                className="absolute inset-0"
-                style={{
-                  backgroundImage: foilBackground,
-                  mixBlendMode: 'overlay',
-                }}
-              />
-
-              {/* Layer 3: glass specular highlight that follows the pointer */}
+              {/* Pointer-tracked specular highlight */}
               <motion.div
                 className="absolute inset-0 pointer-events-none"
                 style={{
@@ -237,7 +212,7 @@ export default function Card({ card, isRevealed, isMe, revealIndex = 0, size = '
                 }}
               />
 
-              {/* Layer 4: fixed top-left glass sheen (the "always-on" reflection) */}
+              {/* Fixed top-left glass sheen (always-on reflection) */}
               <div
                 className="absolute inset-0 pointer-events-none"
                 style={{
@@ -246,7 +221,7 @@ export default function Card({ card, isRevealed, isMe, revealIndex = 0, size = '
                 }}
               />
 
-              {/* Layer 5: bottom edge reflection for depth */}
+              {/* Bottom edge reflection for depth */}
               <div
                 className="absolute inset-x-0 bottom-0 h-1/3 pointer-events-none"
                 style={{
