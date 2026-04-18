@@ -37,6 +37,7 @@ Flags:
   --url <url>                   Base app URL (default: http://localhost:5173)
   --room <id>                   Room ID (required for swarm / observe)
   --count <n>                   Number of clients for swarm / e2e (default: 10)
+  --verbose <n>                 Forward full browser console for the first N swarm clients (default: 0)
   --vote-probability <0..1>     Chance each swarm client votes (default: 0.7)
   --stagger <ms>                Delay between spawning each swarm client (default: 2500)
   --duration <sec>              Exit after N seconds (host mode; default: stay alive)
@@ -48,6 +49,8 @@ Examples:
   node scripts/e2e.js --mode host --url https://lab.howar31.com/scrum-poker
   node scripts/e2e.js --mode swarm --url https://lab.howar31.com/scrum-poker \\
     --room Y8QEZCS --count 10
+  # 10 clients, first 2 forward full console — useful for host-transfer debugging
+  node scripts/e2e.js --mode swarm --room XXX --count 10 --verbose 2
   npm run e2e:check -- --url http://localhost:5173 --count 5
 `;
 
@@ -60,6 +63,7 @@ const parsed = parseArgs({
     url: { type: 'string', default: 'http://localhost:5173' },
     room: { type: 'string' },
     count: { type: 'string', default: '10' },
+    verbose: { type: 'string', default: '0' },
     'vote-probability': { type: 'string', default: '0.7' },
     stagger: { type: 'string', default: '2500' },
     duration: { type: 'string' },
@@ -78,6 +82,7 @@ const mode = parsed.values.mode;
 const baseUrl = (parsed.values.url ?? '').replace(/\/$/, '');
 const roomArg = parsed.values.room;
 const count = parseInt(parsed.values.count, 10);
+const verboseCount = parseInt(parsed.values.verbose, 10);
 const voteProbability = parseFloat(parsed.values['vote-probability']);
 const staggerMs = parseInt(parsed.values.stagger, 10);
 const durationSec = parsed.values.duration ? parseInt(parsed.values.duration, 10) : null;
@@ -161,16 +166,22 @@ async function tryVote(page, name) {
 
 // ---- Client spawners --------------------------------------------------
 
-async function spawnSwarmClient(browser, name, joinUrl) {
+async function spawnSwarmClient(browser, name, joinUrl, { verbose = false } = {}) {
   const page = await openPage(browser, { isolated: true });
   page.on('pageerror', (err) => console.log(`[${name}] pageerror:`, err.message));
+  if (verbose) {
+    // Forward everything — used when you need to see PeerJS signaling
+    // errors, migration state transitions, etc. Truncate to keep one
+    // line per log.
+    page.on('console', (msg) => console.log(`[${name}]`, msg.text().slice(0, 250)));
+  }
   try {
     await page.goto(joinUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
     await fillName(page, name);
     await clickButtonMatching(page, ['Join Room', '加入房間']);
     try {
       await waitForRoomRender(page);
-      console.log(`[${name}] joined`);
+      console.log(`[${name}] joined${verbose ? ' (verbose)' : ''}`);
       setTimeout(() => tryVote(page, name), 1500 + Math.random() * 4500);
     } catch {
       // Hand rail never appeared. Dump a short snapshot so we can tell
@@ -218,11 +229,12 @@ async function runSwarm(browser) {
     process.exit(1);
   }
   const joinUrl = `${baseUrl}/?room=${roomArg}`;
-  console.log(`Spawning ${count} clients at ${joinUrl}`);
+  const verboseMsg = verboseCount > 0 ? ` (${verboseCount} verbose)` : '';
+  console.log(`Spawning ${count} clients${verboseMsg} at ${joinUrl}`);
 
   for (let i = 0; i < count; i++) {
     const name = `Tester${String(i + 1).padStart(2, '0')}`;
-    spawnSwarmClient(browser, name, joinUrl);
+    spawnSwarmClient(browser, name, joinUrl, { verbose: i < verboseCount });
     if (i < count - 1) await delay(staggerMs);
   }
 
@@ -247,7 +259,7 @@ async function runE2E(browser) {
   const joinUrl = `${baseUrl}/?room=${roomId}`;
   for (let i = 0; i < count; i++) {
     const name = `Tester${String(i + 1).padStart(2, '0')}`;
-    await spawnSwarmClient(browser, name, joinUrl);
+    await spawnSwarmClient(browser, name, joinUrl, { verbose: i < verboseCount });
     if (i < count - 1) await delay(800);
   }
 

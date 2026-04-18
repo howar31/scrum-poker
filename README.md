@@ -58,6 +58,10 @@ npm run e2e:host -- --url https://lab.howar31.com/scrum-poker
 # Spawn 10 clients into an existing room; each randomly votes
 npm run e2e:swarm -- --url https://lab.howar31.com/scrum-poker --room ABC1234 --count 10
 
+# Same, but forward the full browser console from the first 2 clients
+# (useful when debugging host migration or reconnect flow)
+npm run e2e:swarm -- --room ABC1234 --count 10 --verbose 2
+
 # Create host + 5 clients, assert host sees them all, exit with code 0/1
 npm run e2e:check -- --count 5
 

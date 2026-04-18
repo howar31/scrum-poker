@@ -104,7 +104,7 @@ A purely frontend, serverless Peer-to-Peer (P2P) Scrum Poker application. It lev
 - **`e2e`** — host creates a room, N clients join, after a settle delay the script reads the host's DOM and asserts the `TesterNN` names appear. Exits with 0 on pass, 1 on fail — suitable for CI.
 - **`observe`** — single client joins `--room` and forwards browser console + page errors. Used for debugging PeerJS / migration issues.
 
-Entry points: `npm run e2e`, `e2e:host`, `e2e:swarm`, `e2e:check`, `e2e:observe` — pass flags after `--` (`npm run e2e:swarm -- --room XXX --count 5`). Puppeteer waits for the hand rail heading (`Your hand` / `你的手牌`) to confirm a client actually entered the Room component, not just the Home screen with a stale error toast.
+Entry points: `npm run e2e`, `e2e:host`, `e2e:swarm`, `e2e:check`, `e2e:observe` — pass flags after `--` (`npm run e2e:swarm -- --room XXX --count 5`). Room entry is detected via `data-testid="hand-card"` on hand-rail buttons (language- and text-transform-agnostic). Swarm mode also accepts `--verbose N` to forward the full browser console for the first N clients — useful when debugging host migration, since every `peerManager` log from those bots is piped to the terminal prefixed with their name.
 
 ## File Structure
 
