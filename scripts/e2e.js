@@ -123,16 +123,10 @@ async function clickButtonMatching(page, needles) {
 }
 
 // The Room component only mounts after the first STATE_UPDATE broadcast
-// arrives. The hand rail heading ("Your hand" / "你的手牌") is the signal
-// that we've actually entered the room rather than lingered on Home.
+// arrives. The hand rail cards carry a stable `data-testid="hand-card"`
+// attribute — waiting for one is language- and text-transform-agnostic.
 async function waitForRoomRender(page, timeoutMs = 25000) {
-  await page.waitForFunction(
-    () => {
-      const txt = document.body.innerText;
-      return txt.includes('Your hand') || txt.includes('你的手牌');
-    },
-    { timeout: timeoutMs }
-  );
+  await page.waitForSelector('[data-testid="hand-card"]', { timeout: timeoutMs });
 }
 
 async function getRoomIdFromUrl(page) {
@@ -150,10 +144,11 @@ async function tryVote(page, name) {
   const pick = CARDS[Math.floor(Math.random() * CARDS.length)];
   try {
     const clicked = await page.evaluate((value) => {
-      const btns = Array.from(document.querySelectorAll('button'));
-      const t = btns.find((b) => b.textContent?.trim() === value);
-      if (t) {
-        t.click();
+      const target = document.querySelector(
+        `[data-testid="hand-card"][data-card-value="${value}"]`
+      );
+      if (target instanceof HTMLElement) {
+        target.click();
         return true;
       }
       return false;
@@ -173,9 +168,19 @@ async function spawnSwarmClient(browser, name, joinUrl) {
     await page.goto(joinUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
     await fillName(page, name);
     await clickButtonMatching(page, ['Join Room', '加入房間']);
-    await waitForRoomRender(page);
-    console.log(`[${name}] joined`);
-    setTimeout(() => tryVote(page, name), 1500 + Math.random() * 4500);
+    try {
+      await waitForRoomRender(page);
+      console.log(`[${name}] joined`);
+      setTimeout(() => tryVote(page, name), 1500 + Math.random() * 4500);
+    } catch {
+      // Hand rail never appeared. Dump a short snapshot so we can tell
+      // the difference between "still on Home with error banner" vs
+      // "joined but detection selector is wrong".
+      const snapshot = await page
+        .evaluate(() => document.body.innerText.slice(0, 200).replace(/\s+/g, ' '))
+        .catch(() => '(unreadable)');
+      console.log(`[${name}] never saw hand rail. body="${snapshot}"`);
+    }
   } catch (err) {
     console.log(`[${name}] setup failed:`, err.message);
   }

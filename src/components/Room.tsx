@@ -33,6 +33,8 @@ function HandCard({
     <button
       onClick={onClick}
       disabled={disabled}
+      data-testid="hand-card"
+      data-card-value={card}
       className={cn(
         'relative w-16 h-24 md:w-20 md:h-28 rounded-xl border-2 font-bold text-2xl md:text-3xl transition-colors focus:outline-none flex items-center justify-center flex-shrink-0',
         selected
