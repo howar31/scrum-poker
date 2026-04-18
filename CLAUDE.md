@@ -28,6 +28,8 @@ See `SPEC.md` for detailed architecture, state management, and P2P implementatio
 ## P2P Rules
 
 - `playerId` is persisted so reloads are recognised as reconnects (not duplicates).
-- `createRoom()` must set `isHost = true` before awaiting `init()` — fixes a race where fast joiners are rejected.
-- Client disconnection triggers `scheduleReconnect` (exp backoff, 5 attempts) before falling back to host migration.
-- UI-initiated leave calls `peerManager.leave()`; internal cleanup uses `peerManager.destroy()` — they differ in whether they cancel pending reconnects.
+- `createRoom()` must set `isHost = true` before awaiting `init()` — fixes a race where fast joiners are rejected. Same applies to `reclaimHostIdentity()` during migration.
+- Unplanned host disconnect: `scheduleReconnect` (5 attempts, ~31 s) then `handleHostDisconnect` computes the successor.
+- Graceful host leave: the leaving host broadcasts `HOST_LEAVING { nextHostId }` before `destroy()`; the leaving host is the **authoritative** decider, clients never recompute. Skips the 31 s grace period.
+- New host (either path) calls `reclaimHostIdentity(roomId)` to take over `scrum-poker-{roomId}` so late joiners and remaining clients can find them at the well-known peer ID. `migrationPhase` drives the UI overlay (`idle` / `reclaiming` / `waiting`).
+- UI-initiated leave calls `peerManager.leave()`; internal cleanup uses `peerManager.destroy()` — they differ in whether they cancel pending reconnects and broadcast `HOST_LEAVING`.

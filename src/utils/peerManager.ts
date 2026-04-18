@@ -14,10 +14,19 @@ export type Action =
 
 export type Message =
   | { type: 'STATE_UPDATE'; payload: RoomState }
-  | { type: 'ACTION'; payload: Action };
+  | { type: 'ACTION'; payload: Action }
+  // Host → clients: I'm leaving gracefully; {{nextHostId}} is the designated
+  // successor. Lets clients skip the 31 s scheduleReconnect grace period
+  // and trigger the new-host reclaim immediately. Computed by the leaving
+  // host so every client trusts the same authoritative choice.
+  | { type: 'HOST_LEAVING'; payload: { nextHostId: string | null } };
 
 const PEER_PREFIX = 'scrum-poker-';
 const RECONNECT_DELAYS_MS = [1000, 2000, 4000, 8000, 16000]; // exp backoff, 5 attempts total
+// Reclaim backoff for new host taking over the well-known peer ID. First
+// attempt is immediate; remaining attempts wait for the PeerJS signaling
+// server to release the old host's ID (heartbeat grace period).
+const RECLAIM_DELAYS_MS = [0, 1000, 2000, 4000, 8000];
 
 class PeerManager {
   private peer: Peer | null = null;
@@ -27,6 +36,10 @@ class PeerManager {
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private intentionalLeave = false;
+  // Guards against infinite migration loops — if a client's scheduleReconnect
+  // hits handleHostDisconnect twice in a row without a successful join, give
+  // up instead of looping forever.
+  private migrationAttempted = false;
 
   init(specificPeerId?: string): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -81,6 +94,7 @@ class PeerManager {
 
   async createRoom() {
     this.intentionalLeave = false;
+    this.migrationAttempted = false;
     const { playerId, playerName } = usePokerStore.getState();
     const roomId = generateRoomId();
     const hostPeerId = `${PEER_PREFIX}${roomId}`;
@@ -120,6 +134,7 @@ class PeerManager {
 
   async joinRoom(roomId: string): Promise<void> {
     this.intentionalLeave = false;
+    this.migrationAttempted = false;
     // Set role BEFORE init (symmetric with createRoom) so any racing state is safe.
     this.isHost = false;
 
@@ -182,12 +197,15 @@ class PeerManager {
         if (data?.type === 'STATE_UPDATE' && data.payload) {
           usePokerStore.getState().updateRoomState(data.payload);
           settle(() => resolve());
+        } else if (data?.type === 'HOST_LEAVING') {
+          this.handleHostLeaving(data.payload.nextHostId);
         }
       });
 
       const setupConnection = () => {
         console.log('[peerManager] joinRoom: conn.open fired, sending JOIN');
         usePokerStore.getState().setConnected(true);
+        usePokerStore.getState().setMigrationPhase('idle');
 
         const { playerId, playerName } = usePokerStore.getState();
         this.sendAction({
@@ -398,6 +416,8 @@ class PeerManager {
       try {
         await this.joinRoom(roomId);
         this.reconnectAttempt = 0;
+        this.migrationAttempted = false;
+        usePokerStore.getState().setMigrationPhase('idle');
         usePokerStore.getState().pushToast({
           message: i18n.t('toast.reconnected'),
           variant: 'success',
@@ -409,11 +429,75 @@ class PeerManager {
     }, delay);
   }
 
-  private handleHostDisconnect() {
+  // Graceful-leave counterpart to `handleHostDisconnect`. Triggered when
+  // the current host broadcasts HOST_LEAVING with an authoritative
+  // successor id. Skips the 31 s scheduleReconnect grace period and jumps
+  // straight into the reclaim / waiting state.
+  private async handleHostLeaving(nextHostId: string | null) {
+    console.log('[peerManager] received HOST_LEAVING, nextHostId=', nextHostId);
+
+    // Cancel any scheduled reconnect — we have fresh, authoritative info.
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.reconnectAttempt = 0;
+
+    const { playerId, roomId, players } = usePokerStore.getState();
+    if (!roomId) return;
+
+    usePokerStore.getState().setConnected(false);
+
+    // No successor — room is closing down with the host.
+    if (!nextHostId) {
+      usePokerStore.getState().pushToast({
+        message: i18n.t('toast.roomEmpty'),
+        variant: 'info',
+      });
+      usePokerStore.getState().leaveRoom();
+      return;
+    }
+
+    if (nextHostId === playerId) {
+      // I'm the designated new host — reclaim now. No 31 s wait.
+      await this.reclaimHostIdentity(roomId);
+      return;
+    }
+
+    // Someone else is taking over. Wait for them to claim the well-known ID,
+    // then our scheduleReconnect naturally lands us on them.
+    usePokerStore.getState().setMigrationPhase('waiting');
+    const successor = players[nextHostId];
+    usePokerStore.getState().pushToast({
+      message: i18n.t('toast.hostLeftSwitching', {
+        name: successor?.name ?? nextHostId,
+      }),
+      variant: 'info',
+    });
+    this.scheduleReconnect();
+  }
+
+  private async handleHostDisconnect() {
     usePokerStore.getState().setConnected(false);
 
     const state = usePokerStore.getState();
-    const { players, playerId } = state;
+    const { players, playerId, roomId } = state;
+
+    if (!roomId) return;
+
+    // Second time through? Means migration already ran but the new host (or
+    // our rejoin) never stabilised. Bail out instead of looping forever.
+    if (this.migrationAttempted) {
+      console.warn('[peerManager] migration already attempted, leaving room');
+      usePokerStore.getState().pushToast({
+        message: i18n.t('toast.reclaimFailed'),
+        variant: 'error',
+      });
+      usePokerStore.getState().setMigrationPhase('idle');
+      usePokerStore.getState().leaveRoom();
+      return;
+    }
+    this.migrationAttempted = true;
 
     const activePlayers = Object.values(players).sort((a, b) => a.joinedAt - b.joinedAt);
     // Exclude the dropped host so we don't elect them again.
@@ -431,32 +515,74 @@ class PeerManager {
     }
 
     if (nextHost.id === playerId) {
-      console.log('[peerManager] self-promoting to host');
-      this.isHost = true;
-      this.hostConnection = null;
-      this.connections.clear();
-      usePokerStore.getState().updateRoomState({ hostId: playerId });
-      usePokerStore.getState().setConnected(true);
-      usePokerStore.getState().pushToast({
-        message: i18n.t('toast.youAreHost'),
-        variant: 'success',
-      });
-      this.broadcastState();
+      console.log('[peerManager] self-promoting to host, reclaiming well-known ID');
+      await this.reclaimHostIdentity(roomId);
       return;
     }
 
-    console.log('[peerManager] connecting to new host:', nextHost.name, nextHost.peerId);
+    // Someone else is the new host. Let them claim the well-known peer ID
+    // (scrum-poker-{roomId}), then our scheduleReconnect naturally finds
+    // them there. Show a "waiting" overlay so the user knows we're not idle.
+    console.log('[peerManager] waiting for new host to claim well-known ID:', nextHost.name);
+    usePokerStore.getState().setMigrationPhase('waiting');
     usePokerStore.getState().pushToast({
       message: i18n.t('toast.hostLeftSwitching', { name: nextHost.name }),
       variant: 'info',
     });
-    this.joinHost(nextHost.peerId).catch((err) => {
-      console.error('[peerManager] failed to connect to new host:', err);
-      usePokerStore.getState().pushToast({
-        message: i18n.t('toast.failedToConnectHost', { name: nextHost.name }),
-        variant: 'error',
-      });
+    this.reconnectAttempt = 0;
+    this.scheduleReconnect();
+  }
+
+  // New host takes over `scrum-poker-{roomId}` so (a) remaining clients'
+  // reconnect loops automatically land on us and (b) anyone arriving via
+  // `?room=XYZ` can still discover the room. PeerJS signaling may hold the
+  // old host's ID for a few seconds (heartbeat grace period), so retry with
+  // backoff before giving up.
+  private async reclaimHostIdentity(roomId: string) {
+    usePokerStore.getState().setMigrationPhase('reclaiming');
+    const hostPeerId = `${PEER_PREFIX}${roomId}`;
+    // Set isHost before init so any incoming connection that races open()
+    // passes the `!isHost` guard in handleIncomingConnection.
+    this.isHost = true;
+
+    for (let i = 0; i < RECLAIM_DELAYS_MS.length; i++) {
+      if (RECLAIM_DELAYS_MS[i] > 0) {
+        await new Promise((r) => setTimeout(r, RECLAIM_DELAYS_MS[i]));
+      }
+      try {
+        await this.init(hostPeerId);
+        // Success — we now own the well-known peer ID.
+        const { playerId } = usePokerStore.getState();
+        this.hostConnection = null;
+        this.connections.clear();
+        this.reconnectAttempt = 0;
+        this.migrationAttempted = false;
+        usePokerStore.getState().updateRoomState({ hostId: playerId });
+        usePokerStore.getState().setConnected(true);
+        usePokerStore.getState().setMigrationPhase('idle');
+        usePokerStore.getState().pushToast({
+          message: i18n.t('toast.youAreHost'),
+          variant: 'success',
+        });
+        this.broadcastState();
+        return;
+      } catch (err) {
+        console.warn(
+          `[peerManager] reclaim attempt ${i + 1}/${RECLAIM_DELAYS_MS.length} failed:`,
+          err
+        );
+      }
+    }
+
+    // All attempts failed — couldn't take over. Back out.
+    console.error('[peerManager] failed to reclaim host identity after retries');
+    this.isHost = false;
+    usePokerStore.getState().pushToast({
+      message: i18n.t('toast.reclaimFailed'),
+      variant: 'error',
     });
+    usePokerStore.getState().setMigrationPhase('idle');
+    usePokerStore.getState().leaveRoom();
   }
 
   private transferHost(newHostId: string) {
@@ -505,6 +631,8 @@ class PeerManager {
       const data = raw as Message;
       if (data?.type === 'STATE_UPDATE' && data.payload) {
         usePokerStore.getState().updateRoomState(data.payload);
+      } else if (data?.type === 'HOST_LEAVING') {
+        this.handleHostLeaving(data.payload.nextHostId);
       }
     });
 
@@ -545,6 +673,35 @@ class PeerManager {
       this.reconnectTimer = null;
     }
     this.reconnectAttempt = 0;
+
+    // Graceful host handoff: before destroying, tell every client who the
+    // designated successor is. The leaving host is the authoritative
+    // decider — clients do not recompute. Computed using the same
+    // joinedAt-sorted rule as the unplanned-disconnect migration path.
+    if (this.isHost && this.connections.size > 0) {
+      const state = usePokerStore.getState();
+      const candidates = Object.values(state.players)
+        .sort((a, b) => a.joinedAt - b.joinedAt)
+        .filter((p) => p.id !== state.hostId);
+      const nextHostId = candidates[0]?.id ?? null;
+
+      const msg: Message = {
+        type: 'HOST_LEAVING',
+        payload: { nextHostId },
+      };
+      this.connections.forEach((conn) => {
+        if (conn.open) conn.send(msg);
+      });
+
+      // Small defer so the data-channel send queue flushes before destroy
+      // tears the peer down. 50 ms is imperceptible to the user.
+      setTimeout(() => {
+        this.destroy();
+        this.isHost = false;
+      }, 50);
+      return;
+    }
+
     this.destroy();
     this.isHost = false;
   }

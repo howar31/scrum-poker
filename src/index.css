@@ -25,6 +25,14 @@
   }
 }
 
+html,
+body {
+  /* Block pull-to-refresh and overscroll bounce so a stray drag at the top
+     of the page doesn't reload the app (iOS Safari ignores beforeunload,
+     so this is the only gesture-level defence available). */
+  overscroll-behavior-y: contain;
+}
+
 body {
   @apply bg-[var(--color-background-light)] text-[var(--color-text-light)] dark:bg-[var(--color-background-dark)] dark:text-[var(--color-text-dark)] transition-colors duration-200;
 }

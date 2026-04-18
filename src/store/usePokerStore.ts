@@ -26,6 +26,8 @@ export interface Toast {
   variant: ToastVariant;
 }
 
+export type MigrationPhase = 'idle' | 'reclaiming' | 'waiting';
+
 interface PokerState extends RoomState {
   playerId: string;
   playerName: string;
@@ -34,6 +36,7 @@ interface PokerState extends RoomState {
   isConnected: boolean;
   error: string | null;
   toasts: Toast[];
+  migrationPhase: MigrationPhase;
 
   // Actions
   setPlayerId: (id: string) => void;
@@ -44,6 +47,7 @@ interface PokerState extends RoomState {
   setError: (error: string | null) => void;
   pushToast: (toast: Omit<Toast, 'id'>) => void;
   dismissToast: (id: string) => void;
+  setMigrationPhase: (phase: MigrationPhase) => void;
 
   // Room Actions
   updateRoomState: (state: Partial<RoomState>) => void;
@@ -67,6 +71,7 @@ export const usePokerStore = create<PokerState>()(
       isConnected: false,
       error: null,
       toasts: [],
+      migrationPhase: 'idle',
 
       setPlayerId: (id) => set({ playerId: id }),
       setPlayerName: (name) => set({ playerName: name }),
@@ -80,10 +85,18 @@ export const usePokerStore = create<PokerState>()(
         })),
       dismissToast: (id) =>
         set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
+      setMigrationPhase: (phase) => set({ migrationPhase: phase }),
 
       updateRoomState: (newState) => set((state) => ({ ...state, ...newState })),
       leaveRoom: () =>
-        set({ roomId: null, hostId: null, players: {}, isRevealed: false, isConnected: false }),
+        set({
+          roomId: null,
+          hostId: null,
+          players: {},
+          isRevealed: false,
+          isConnected: false,
+          migrationPhase: 'idle',
+        }),
     }),
     {
       name: 'scrum-poker-storage',
