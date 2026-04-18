@@ -9,6 +9,7 @@ See `SPEC.md` for detailed architecture, state management, and P2P implementatio
 - **Dev**: `npm run dev`
 - **Build**: `npm run build`
 - **Lint**: `npm run lint`
+- **E2E driver**: `npm run e2e -- --help` (browser automation via `scripts/e2e.js`). Shortcuts: `e2e:host`, `e2e:swarm`, `e2e:check`, `e2e:observe`. The swarm and observe modes need `--room`; swarm/e2e accept `--count`.
 
 ## Conventions
 

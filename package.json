@@ -7,7 +7,12 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "e2e": "node scripts/e2e.js",
+    "e2e:host": "node scripts/e2e.js --mode host",
+    "e2e:swarm": "node scripts/e2e.js --mode swarm",
+    "e2e:check": "node scripts/e2e.js --mode e2e",
+    "e2e:observe": "node scripts/e2e.js --mode observe"
   },
   "dependencies": {
     "clsx": "^2.1.1",

@@ -47,6 +47,24 @@ npm run build
 npm run lint
 ```
 
+### End-to-end browser automation
+
+A single Puppeteer script at `scripts/e2e.js` drives the app through real browsers for smoke-testing and load simulation. All modes accept `--url` (defaults to `http://localhost:5173`) and other flags — run `npm run e2e -- --help` for the full list.
+
+```bash
+# Create a room in a headless browser and keep it alive
+npm run e2e:host -- --url https://lab.howar31.com/scrum-poker
+
+# Spawn 10 clients into an existing room; each randomly votes
+npm run e2e:swarm -- --url https://lab.howar31.com/scrum-poker --room ABC1234 --count 10
+
+# Create host + 5 clients, assert host sees them all, exit with code 0/1
+npm run e2e:check -- --count 5
+
+# Silent single-client debug helper with console forwarding
+npm run e2e:observe -- --room ABC1234
+```
+
 ## Deployment
 
 This project is configured to automatically deploy to GitHub Pages when changes are pushed to the `main` branch, via GitHub Actions (`.github/workflows/deploy.yml`).

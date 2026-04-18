@@ -95,6 +95,17 @@ A purely frontend, serverless Peer-to-Peer (P2P) Scrum Poker application. It lev
 
 - Rooms are ephemeral. They exist entirely in memory. When the last participant leaves, the room simply ceases to exist.
 
+## End-to-End Harness
+
+`scripts/e2e.js` is a Puppeteer-based CLI for driving the app through real browsers — smoke tests, multi-client load simulation, and debug observation. It replaces the old `test-host.js` / `test-live.js` / `test-live-e2e.js` / `test-10-clients.js` scripts.
+
+- **`host`** — one browser creates a room via the Create CTA, prints the Room ID, keeps the page open. Supports `--duration` for a finite-lifetime smoke test.
+- **`swarm`** — N isolated browser contexts join an existing `--room` (each context has its own localStorage so zustand's persisted `playerId` doesn't collide). Each client randomly votes with probability `--vote-probability`. Stays alive until SIGINT.
+- **`e2e`** — host creates a room, N clients join, after a settle delay the script reads the host's DOM and asserts the `TesterNN` names appear. Exits with 0 on pass, 1 on fail — suitable for CI.
+- **`observe`** — single client joins `--room` and forwards browser console + page errors. Used for debugging PeerJS / migration issues.
+
+Entry points: `npm run e2e`, `e2e:host`, `e2e:swarm`, `e2e:check`, `e2e:observe` — pass flags after `--` (`npm run e2e:swarm -- --room XXX --count 5`). Puppeteer waits for the hand rail heading (`Your hand` / `你的手牌`) to confirm a client actually entered the Room component, not just the Home screen with a stale error toast.
+
 ## File Structure
 
 - `src/components/`: React UI components.
