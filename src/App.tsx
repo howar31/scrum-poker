@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { usePokerStore } from './store/usePokerStore';
 import Home from './components/Home';
 import Room from './components/Room';
+import Toast from './components/Toast';
 import { Settings, Moon, Sun } from 'lucide-react';
 
 function App() {
@@ -52,6 +53,7 @@ function App() {
       <main className="flex-1 flex flex-col p-4 md:p-8 max-w-6xl mx-auto w-full">
         {roomId ? <Room /> : <Home />}
       </main>
+      <Toast />
     </div>
   );
 }

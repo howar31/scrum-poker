@@ -12,7 +12,7 @@ This application allows teams to estimate stories without requiring a backend se
 - **Mistake-proof Entry**: The Home page shows only one primary action at a time — Join when you arrive via an invite link, Create otherwise — so you can't accidentally click the wrong button.
 - **Resilient Connections**: Automatic reconnect with exponential backoff (5 attempts over ~31 s). If reconnection truly fails, host migration kicks in — the oldest remaining peer is promoted to host and everyone else reconnects to them.
 - **Persistent Identity**: Your player ID survives page reloads, so a refresh is recognised as a reconnect rather than a duplicate player.
-- **Toast Notifications**: Non-intrusive notifications for joins, leaves, reconnects, and host changes.
+- **Toast Notifications**: Non-intrusive notifications for joins, leaves, reconnects, host changes, and connection errors — all auto-dismiss so stale messages don't linger after a successful reconnect.
 - **Arc Browser Warning**: Arc's default WebRTC privacy settings break P2P connections without a TURN server; the app detects Arc and displays actionable guidance on how to adjust the setting.
 - **Accessibility**: A "Reduce Motion" toggle disables every animation in one click.
 - **Theming**: Supports Dark and Light modes.

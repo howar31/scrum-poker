@@ -7,7 +7,6 @@ import { usePokerStore, type CardValue } from '../store/usePokerStore';
 import { peerManager } from '../utils/peerManager';
 import Table from './Table';
 import Statistics from './Statistics';
-import Toast from './Toast';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -61,7 +60,7 @@ function HandCard({
 }
 
 export default function Room() {
-  const { roomId, hostId, playerId, players, isRevealed, isConnected, error } = usePokerStore();
+  const { roomId, hostId, playerId, players, isRevealed, isConnected } = usePokerStore();
   const [copied, setCopied] = useState(false);
 
   const amIHost = hostId === playerId;
@@ -96,8 +95,6 @@ export default function Room() {
 
   return (
     <div className="flex flex-col h-full gap-6">
-      <Toast />
-
       {/* Top Bar */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 gap-3">
         <div className="flex items-center gap-4 flex-wrap">
@@ -145,13 +142,6 @@ export default function Room() {
           Leave Room
         </button>
       </div>
-
-      {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-          <strong className="font-bold">Error: </strong>
-          <span>{error}</span>
-        </div>
-      )}
 
       {/* Main: Table on left, Statistics on right (lg) */}
       <div className="flex flex-col lg:flex-row gap-6 flex-1 min-h-0">

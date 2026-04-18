@@ -22,6 +22,7 @@ A purely frontend, serverless Peer-to-Peer (P2P) Scrum Poker application. It lev
 - **Invite Links**: Joining a room via an invite link uses URL search parameters (`?room=XYZ`). Room IDs are normalised to uppercase with common character substitutions (`I/L → 1`, `O → 0`, `U → V`) to tolerate manual mistyping.
 - **Race-free role assignment**: `createRoom()` sets `isHost = true` *before* awaiting PeerJS init to close the window where a racing incoming connection would be rejected by the `!isHost` guard in `handleIncomingConnection`.
 - **Connection timeout**: `joinRoom()` rejects after 20s with a user-facing error. If Arc Browser is detected, the error message appends Arc-specific guidance (`arc://flags` → "Anonymize local IPs exposed to WebRTC" → Disabled).
+- **Error surfacing**: Initial connection failures (create/join) are surfaced by the caller (`Home.tsx`) via `pushToast({ variant: 'error' })`. Post-init transient peer errors (stale signaling events after a network blip) are routed directly to toasts from `peerManager` so they auto-dismiss and don't persist after reconnect succeeds. There is no static error banner — the `error` state field in the store is retained for completeness but is not rendered.
 
 ### 2. State Management (Zustand)
 
@@ -76,7 +77,7 @@ A purely frontend, serverless Peer-to-Peer (P2P) Scrum Poker application. It lev
 
 ### 9. Other UI
 
-- **Toasts**: right-side slide-in / fade-out with `AnimatePresence`, auto-dismiss after 3.5 s.
+- **Toasts**: right-side slide-in / fade-out with `AnimatePresence`, auto-dismiss after 3.5 s. Rendered at the `App` root so they appear in both Home and Room views. All user-facing errors (connection failures, peer errors) go through this channel — there is no inline error banner.
 - **Accessibility / Performance**: `animationsEnabled` toggle respected by every animated component.
 - **Theming**: Dark mode support via Tailwind's `dark:` classes and toggled on `<html>` element.
 

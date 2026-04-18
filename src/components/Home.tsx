@@ -43,12 +43,15 @@ function CreateForm({ playerName, onNameChange }: { playerName: string; onNameCh
 
   const handleCreate = async () => {
     if (!playerName.trim() || busy) return;
-    usePokerStore.getState().setError(null);
     setBusy(true);
     try {
       await peerManager.createRoom();
     } catch (err) {
       console.error(err);
+      usePokerStore.getState().pushToast({
+        message: err instanceof Error ? err.message : 'Failed to create room',
+        variant: 'error',
+      });
     } finally {
       setBusy(false);
     }
@@ -85,12 +88,15 @@ function JoinForm({
     e.preventDefault();
     const roomId = normalizeRoomId(roomInput);
     if (!playerName.trim() || !roomId || busy) return;
-    usePokerStore.getState().setError(null);
     setBusy(true);
     try {
       await peerManager.joinRoom(roomId);
     } catch (err) {
       console.error(err);
+      usePokerStore.getState().pushToast({
+        message: err instanceof Error ? err.message : 'Failed to join room',
+        variant: 'error',
+      });
     } finally {
       setBusy(false);
     }
@@ -126,7 +132,7 @@ function JoinForm({
 }
 
 export default function Home() {
-  const { playerName, setPlayerName, error } = usePokerStore();
+  const { playerName, setPlayerName } = usePokerStore();
   const [roomFromUrl] = useState(readRoomFromUrl);
   const [showJoinFallback, setShowJoinFallback] = useState(false);
 
@@ -142,13 +148,6 @@ export default function Home() {
   return (
     <div className="flex flex-col items-center justify-center flex-1 max-w-md mx-auto w-full gap-6">
       <ArcBrowserWarning />
-
-      {error && (
-        <div className="w-full bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-          <strong className="font-bold">Error: </strong>
-          <span>{error}</span>
-        </div>
-      )}
 
       <div className="w-full bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700">
         {hasRoomInUrl ? (

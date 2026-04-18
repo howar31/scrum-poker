@@ -62,11 +62,18 @@ class PeerManager {
 
       this.peer.on('error', (err) => {
         console.error('[peerManager] peer error:', err.type, err.message);
-        usePokerStore.getState().setError(err.message);
         if (!initResolved) {
           initResolved = true;
           reject(err);
+          return;
         }
+        // Post-init peer errors are transient (e.g. stale signaling events
+        // after a network blip). Surface as a toast so they auto-dismiss and
+        // don't persist after reconnect succeeds.
+        usePokerStore.getState().pushToast({
+          message: err.message,
+          variant: 'error',
+        });
       });
     });
   }
@@ -134,8 +141,7 @@ class PeerManager {
 
       const onPeerError = (err: { type?: string; message?: string }) => {
         console.error('[peerManager] joinRoom peer error:', err.type, err.message);
-        usePokerStore.getState().setError(err.message ?? 'Peer error');
-        settle(() => reject(err));
+        settle(() => reject(new Error(err.message ?? 'Peer error')));
       };
 
       this.peer!.on('error', onPeerError);
