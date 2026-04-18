@@ -16,6 +16,13 @@ export interface RoomState {
   hostId: string | null;
   players: Record<string, Player>;
   isRevealed: boolean;
+  // Monotonically increasing per-room host epoch. Every successful
+  // become-host transition (createRoom or migration) bumps this. Clients
+  // only accept inbound messages with epoch >= localEpoch — stale
+  // broadcasts from a previous host can never overwrite fresher state.
+  // Not persisted: a fresh page load learns the current epoch from the
+  // host's next heartbeat STATE.
+  epoch: number;
 }
 
 export type ToastVariant = 'info' | 'warning' | 'error' | 'success';
@@ -70,6 +77,7 @@ export const usePokerStore = create<PokerState>()(
       hostId: null,
       players: {},
       isRevealed: false,
+      epoch: 0,
 
       playerId: generateId(),
       playerName: '',
@@ -103,6 +111,7 @@ export const usePokerStore = create<PokerState>()(
           hostId: null,
           players: {},
           isRevealed: false,
+          epoch: 0,
           connectionStatus: 'disconnected',
           migrationPhase: 'idle',
           playersPanelOpen: false,

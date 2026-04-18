@@ -28,6 +28,10 @@
     "e2e:copy-toast": "node scripts/e2e.js --mode copy-toast",
     "e2e:solo-leave": "node scripts/e2e.js --mode solo-leave",
     "e2e:panel-ux": "node scripts/e2e.js --mode panel-ux",
+    "e2e:split-brain": "node scripts/e2e.js --mode split-brain",
+    "e2e:crash-mid-transfer": "node scripts/e2e.js --mode crash-mid-transfer",
+    "e2e:election-race": "node scripts/e2e.js --mode election-race",
+    "e2e:partition": "node scripts/e2e.js --mode partition",
     "e2e:all": "node scripts/e2e.js --mode all"
   },
   "dependencies": {

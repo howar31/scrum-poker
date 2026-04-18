@@ -16,8 +16,11 @@ export async function run(browser, { baseUrl, count }) {
   console.log('\n>>> Closing host page without any graceful leave <<<');
   await hostPage.close();
 
-  console.log('\nObserving clients for 30 s while migration runs...');
-  await delay(30000);
+  // Budget: migration is up to MIGRATION_BUDGET_MS (60 s) + settle time.
+  // Under dirty crash the broker alive_timeout can hold the well-known
+  // ID for ~60 s so we wait 70 s for convergence.
+  console.log('\nObserving clients for 70 s while migration runs...');
+  await delay(70000);
 
   console.log('\n>>> Final snapshots (host excluded — it was killed) <<<');
   const clientSnaps = await snapAll(clientPages);

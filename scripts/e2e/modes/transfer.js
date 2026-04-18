@@ -18,7 +18,10 @@ import {
 } from '../helpers.js';
 
 export async function run(browser, { baseUrl, count }) {
-  const clientCount = count || 2;
+  // Default 4 clients (5 total) — catches the cross-network stranding
+  // class of bugs that fewer-client configurations can hide. Accepts an
+  // override for smaller ad-hoc runs.
+  const clientCount = count || 4;
   console.log(`Transfer scenario: 1 host + ${clientCount} clients at ${baseUrl}`);
 
   const { hostPage, clientPages } = await setupRoom(browser, {

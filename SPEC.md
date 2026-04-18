@@ -18,9 +18,8 @@ A purely frontend, serverless Peer-to-Peer (P2P) Scrum Poker application. It lev
 - **Signaling**: Uses PeerJS's public cloud broker by default.
 - **Connections**: Data connections are strictly between the Host and individual Peers, using `serialization: 'json'` for transparent packet inspection in DevTools.
 - **ICE Servers**: Explicit STUN servers (`stun.l.google.com:19302`, `global.stun.twilio.com:3478`). No TURN server is configured — peers behind symmetric NAT or with restrictive browser WebRTC policies (e.g., Arc Browser's mDNS anonymisation) may fail to connect.
-- **Room Identification**: Room IDs are 7-character Crockford Base32 strings (`0-9A-Z` minus `I/L/O/U`) generated with `crypto.getRandomValues`. The Host's PeerJS id is `scrum-poker-{roomId}`, enabling any joiner to resolve the Host deterministically. See `src/utils/roomId.ts`.
+- **Room Identification**: Room IDs are 7-character Crockford Base32 strings (`0-9A-Z` minus `I/L/O/U`) generated with `crypto.getRandomValues`. The Host's PeerJS id is ALWAYS `scrum-poker-{roomId}` — there is no random-ID host and no secondary peer. This is the single source of truth for "who is host", arbitrated by the PeerJS broker's one-peer-per-ID constraint. See `src/utils/roomId.ts`.
 - **Invite Links**: Joining a room via an invite link uses URL search parameters (`?room=XYZ`). Room IDs are normalised to uppercase with common character substitutions (`I/L → 1`, `O → 0`, `U → V`) to tolerate manual mistyping.
-- **Race-free role assignment**: `createRoom()` sets `isHost = true` *before* awaiting PeerJS init to close the window where a racing incoming connection would be rejected by the `!isHost` guard in `handleIncomingConnection`.
 - **Connection timeout**: `joinRoom()` rejects after 20s with a user-facing error. If Arc Browser is detected, the error message appends Arc-specific guidance (`arc://flags` → "Anonymize local IPs exposed to WebRTC" → Disabled).
 - **Error surfacing**: Initial connection failures (create/join) are surfaced by the caller (`Home.tsx`) via `pushToast({ variant: 'error' })`. Post-init transient peer errors (stale signaling events after a network blip) are routed directly to toasts from `peerManager` so they auto-dismiss and don't persist after reconnect succeeds. There is no static error banner — the `error` state field in the store is retained for completeness but is not rendered.
 
@@ -34,33 +33,120 @@ A purely frontend, serverless Peer-to-Peer (P2P) Scrum Poker application. It lev
 
 ### 3. Host Migration & Reconnection
 
-Goal: **existing members reunited in ≈ 10 s** regardless of how long the PeerJS broker holds the old host's ID. Late joiners arriving via `?room=XYZ` during a migration use the cancellable retry UI and typically succeed within 30 s.
+**Design principle: the PeerJS broker is the single arbiter of host identity.** The broker's one-peer-per-ID guarantee is the only cluster-wide consensus primitive available in a serverless P2P design. Every migration path collapses to one operation: `new Peer('scrum-poker-{roomId}')` on the broker. The broker grants the ID to exactly one caller and returns `unavailable-id` to everyone else. Split-brain is structurally impossible, not a safeguard to maintain.
 
-- **Application-layer heartbeat**: The host broadcasts `{type: 'PING'}` over every DataConnection every 2 s (`PING_INTERVAL_MS`). Clients reset a single rolling 8 s watchdog (`PING_TIMEOUT_MS`) on ANY inbound message — PING, `STATE_UPDATE`, or `HOST_LEAVING`. If the watchdog fires, the client calls `onHostConnectionLost()` without waiting for WebRTC's own ICE consent check (15–30 s). This is the primary liveness signal; DataConnection `close` / `error` events still route through the same path as a fallback.
-- **Broker re-registration**: `peer.on('disconnected')` still fires when the WebSocket to PeerJS signaling drops (tab backgrounded, network blip) while the Peer object is alive locally. The handler flips `connectionStatus='reconnecting'` and calls PeerJS's built-in `peer.reconnect()` to re-register the same peer ID; a subsequent `peer.on('open')` flips status back to `connected`. The handler short-circuits when `intentionalLeave` is set, and `destroy()` calls `peer.removeAllListeners()` before `peer.destroy()` — both prevent a reconnect-race during migration teardown that would hold the old peer ID alive on the broker.
-- **Option A reconnect**: `onHostConnectionLost()` first performs ONE quick 2 s probe (`WELL_KNOWN_PROBE_TIMEOUT_MS`) to the well-known ID, which cheaply rules out transient network blips. On probe failure it escalates to `handleHostDisconnect()`. The `reconnecting` flag prevents concurrent triggers (heartbeat + conn.close can race) from running the probe twice. `handleHostLeaving` also holds the flag for its full run so the old host's peer teardown — which fires `conn.on('close')` on every client — doesn't race a second migration into an in-flight one (symptom: random clients dropped out of the room during a 4-way transfer).
-- **Graceful host leave / manual transfer (fast path)**: The leaving host broadcasts `HOST_LEAVING { nextHostId }` — the authoritative successor choice, computed once using the oldest-non-host-by-`joinedAt` rule (or picked directly in `transferHost`) — and **waits for `HOST_LEAVING_ACK` from every connected client** (`broadcastHostLeavingAndWait`) before destroying its peer. Each ACK has a `HOST_LEAVING_ACK_TIMEOUT_MS` = 5 s cap (originally 2 s; bumped for cross-network tolerance), after which we proceed anyway. A peer-level `conn.on('close')` also resolves the waiter as an implicit ACK — the designated successor self-promotes via the eager STATE_UPDATE below and then closes its hostConnection, so there's no explicit ACK coming from them. The ACK round-trip replaces the previous 50 ms flush — which couldn't outrun real-world cross-network RTT (100–500 ms), causing HOST_LEAVING to be dropped by SCTP when the DataChannel was destroyed. Symptom before the fix: in 4+ player transfers the user-picked successor could miss the message, fall back to auto-election (which picks oldest-non-host, not necessarily the user's choice), and end up split between "waiting for someone else" and "should be host myself" — nobody would actually be host. Receivers skip the Option A probe entirely (we *know* the old host is gone) and jump straight to direct-connect. `transferHost` is the same flow; the demoting host additionally releases the well-known ID peer so the successor's background reclaim can succeed, then rejoins as a client via `directConnectToSuccessor`.
-- **Eager STATE_UPDATE on transfer + STATE_UPDATE-driven self-promote**: Before the HOST_LEAVING handshake runs, `transferHost` **rotates `state.hostId = newHostId` locally and calls `broadcastState()`**. Three downstream effects:
-  1. The leaving host's own UI moves the crown and the Reveal/Reset buttons off itself immediately (crown is a pure function of `state.hostId`), instead of waiting until the leaving host reconnects to the new host as a client and receives a STATE_UPDATE back. Before this change, the leaving host's UI could sit for ~2–20 s showing them as host while the reconnect worked through — and if the reconnect never completed cross-network, the crown stayed on the leaving host indefinitely.
-  2. Still-connected clients pick up the new `hostId` through the same broadcast channel — redundant with HOST_LEAVING but useful if the HOST_LEAVING packet is lost at SCTP level later.
-  3. The designated successor's `joinViaHost` data handler receives this STATE_UPDATE and checks `!this.isHost && data.payload.hostId === state.playerId && state.roomId` — if true, it calls `selfPromoteHost` right there. This is the belt-and-braces guarantee that the new host takes the role even when the subsequent HOST_LEAVING is completely lost. The guard is idempotent (`selfPromoteHost` flips `isHost = true`, so subsequent STATE_UPDATEs never retrigger).
-  Combined with `authoritativeSuccessor` (saved unconditionally on HOST_LEAVING arrival, consumed by `handleHostDisconnect` so conn.close-triggered migration still picks the correct successor), the transfer path now has three independent pathways to converge on the right host: (a) HOST_LEAVING → `handleHostLeaving` → `selfPromoteHost`; (b) STATE_UPDATE → data-handler check → `selfPromoteHost`; (c) conn.close → `handleHostDisconnect` → consults `authoritativeSuccessor`.
-- **Kick flow**: Host's `processAction('KICK')` deletes the victim from `state.players`, records their playerId in `kickedUntil` (Map<playerId, expiryTimestamp>) for `KICK_REJECT_WINDOW_MS` = 5 s, **removes their conn from `this.connections` before the trailing `broadcastState()`**, sends a `KICKED` message, waits `KICK_MESSAGE_FLUSH_MS` = 200 ms for SCTP to flush, then closes the conn. Client's `joinViaHost` data handler routes `KICKED` → `handleKicked`, which sets `intentionalLeave = true`, pushes the `toast.youWereKicked` toast, calls `leaveRoom` (clears roomId → App re-renders Home), and `destroy()`s the peer. Without this: the client's `conn.on('close')` would call `onHostConnectionLost` → Option A probe succeeds → JOIN re-added, and the kicked user would pop right back. The 5-second reject window is a defense layer for the case where the `KICKED` message itself is lost — any JOIN from a recently-kicked playerId during the window is rejected with a fresh KICKED + close. Window is deliberately short so a user who genuinely wants to re-join can click Join a few seconds later without being permanently banned. Dropping the victim's conn from `this.connections` before broadcastState matters because otherwise the kicked peer races `KICKED` with an immediate STATE_UPDATE — `updateRoomState` after `leaveRoom` would repopulate roomId/players and put them back in the Room UI.
-- **Deadman recovery (`recoverNoHost`)**: When `directConnectToSuccessor` exhausts its 20 s budget without a successful reconnect, the client falls back to this method instead of immediately `leaveRoom`-ing. Each player computes their `joinedAt` rank among current `state.players`; rank 0 (oldest — typically the ex-host / original room creator in a transfer scenario, or the oldest surviving client in a crash) self-promotes immediately via `selfPromoteHost`. Higher ranks stagger by `rank * 3 s`, then try a final `joinViaHost(well-known)` in case an earlier rank self-promoted during the wait. Only if that fails do they self-promote themselves (accepting a brief split-brain that the well-known-ID reclaim race later resolves — only one `Peer` instance can own the well-known ID at a time). Design intent: keep the room alive rather than evicting everyone when a handoff is lost across the network, and align with the user expectation that the original host is the natural fallback.
-- **Unplanned host disconnect**: After probe failure, `handleHostDisconnect()` picks the same successor (oldest non-host by `joinedAt`). A `migrationAttempted` flag prevents infinite loops — second entry in one session = give up and leave. If the successor is self → `selfPromoteHost()`, else → `directConnectToSuccessor(successor.peerId)`.
-- **Direct-connect to successor (the ≈10 s path)**: Clients do NOT wait for the new host to reclaim the well-known ID. `directConnectToSuccessor` runs a retry loop budgeted at `MIGRATION_RECONNECT_BUDGET_MS = 20 s` that alternates between two targets every attempt: the successor's original random peer ID (reachable as soon as they flip `isHost = true`) and the well-known ID `scrum-poker-{roomId}` (reachable as soon as their background reclaim opens the secondary peer). Whichever channel opens first wins. Fallback to well-known matters because the successor can briefly reject direct connections while still a client (the `!isHost` guard in `handleIncomingConnection`); a single target would give up before they're ready.
-- **`selfPromoteHost`**: Flips `isHost = true`, clears the dead host connection, broadcasts state, starts the heartbeat interval, and kicks off `reclaimWellKnownInBackground` WITHOUT awaiting. The primary peer keeps its original random ID forever; existing members direct-connect to it. `scheduleGhostCleanup` (20 s) runs here too, sweeping any player whose `peerId` isn't in `connections` by the time it fires.
-- **Secondary well-known peer (background, late joiners only)**: `reclaimWellKnownInBackground` retries `openWellKnownPeer(hostPeerId)` on the backoff `RECLAIM_DELAYS_MS = [0, 1, 2, 4, 8, 15, 20, 20] s ≈ 70 s` (covers the full 60 s broker `alive_timeout`). Each successful `openWellKnownPeer` creates a *second* `Peer` instance at `scrum-poker-{roomId}` stored as `this.wellKnownPeer`; its `connection` events route through the same `handleIncomingConnection` as the primary. The primary peer is untouched, so existing DataConnections never break. On any retry failure the slot is cleared and the loop tries again. `destroy()` tears down both peers. `transferHost` releases `wellKnownPeer` before handing off so the new host can claim the ID immediately.
-- **New joiner via `?room=XYZ` during migration**: `joinRoomWithRetry(roomId, { onProgress })` in `peerManager` returns a `{ cancel, promise }` handle. Internally loops `joinViaHost(well-known)` with a 5 s per-attempt timeout until success or cancel — no internal timeout, because the UI is responsible for presenting a way out. `onProgress` reports `{ kind: 'connecting' | 'peer-unavailable' | 'timeout' }` so the UI can tell the user *why* it's still waiting: `peer-unavailable` (ID not registered — room doesn't exist, or broker just released it mid-migration) vs `timeout` (broker still has the ID but the peer is unreachable — migration likely in progress). `Home.tsx`'s `JoinForm` shows a spinner + progress message throughout; after a side-timer of 30 s (`LONG_WAIT_PROMPT_MS`) a non-blocking amber banner appears ("Still haven't reached the room — retry continues in the background") with a Dismiss button (hides the banner, retry never paused) and a Give up button (cancels the handle → destroys any in-flight peer → returns to the form). This replaces the previous "Keep trying (30 s) / Give up" prompt so the user can walk away without actively extending the window.
-- **Migration UI**: `src/components/MigrationOverlay.tsx` reads `migrationPhase` from the store (`'idle' | 'reclaiming' | 'waiting'`) and renders a semi-transparent overlay with a spinner and phase-specific copy while migration is in progress. Rendered at the `App` root so it covers everything.
-- **Intentional leave**: `peerManager.leave()` (invoked from the UI's Leave Room button) cancels any pending reconnect, tears everything down (primary + secondary peers), and flips `isHost = false`. Internal `destroy()` (called during peer re-initialisation) does *not* touch the intentional-leave flag, so reconnect flows survive peer re-creation.
-- **Unload guard**: while `roomId` is set, `App.tsx` installs a `beforeunload` listener that calls `preventDefault()` + sets `returnValue`, so refresh / tab-close / window-close triggers the browser's native "Leave site?" prompt on desktop / Android. iOS Safari ignores `beforeunload`, so `src/index.css` also sets `overscroll-behavior-y: contain` on `html, body` to block the pull-to-refresh gesture (the most common accidental refresh on mobile). Address-bar refresh and swipe-back on iOS remain unblockable, but `playerId` persistence + URL `?room=XYZ` means a refreshed client can click Join again to return.
+#### Invariants
+
+- **H1 — one host per epoch**: each room carries a monotonically increasing `epoch: number` in the store, bumped on every become-host transition. Messages are stamped with the issuer's current epoch; any message with `epoch < localEpoch` is dropped. Stale broadcasts from a previous host can never overwrite fresher state.
+- **H2 — well-known ID is the host**: the peer currently owning `scrum-poker-{roomId}` at the broker IS the host. There is NO secondary peer, NO random-ID "host with reclaim in background" state. A client cannot flip `isHost = true` without first succeeding at `new Peer('scrum-poker-{roomId}')`.
+
+#### Finite State Machine
+
+```
+IDLE ──create──▶ HOSTING         (opens well-known peer; epoch=1)
+IDLE ──join───▶ FOLLOWING        (connects to well-known peer as random-ID peer)
+
+FOLLOWING ──conn.close / watchdog fire──▶ runMigration
+  │
+  ├──▶ ELECTING (iAmElector: designated=me OR rank 0 when no LEAVING)
+  │     ├──openPeer(wellKnown) succeeds──▶ HOSTING (epoch++)
+  │     ├──unavailable-id─────────────────▶ connect as client
+  │     └──budget exhausted──────────────▶ IDLE (+"room lost" toast)
+  │
+  └──▶ FOLLOWING_WAIT (non-elector; waits MIGRATION_GRACE_MS+rank*RANK_STAGGER_MS)
+        ├──joinAsClient(wellKnown) succeeds──▶ FOLLOWING
+        ├──grace expires────────────────────▶ unlock Phase B (may elect)
+        └──budget exhausted────────────────▶ IDLE (+"room lost" toast)
+
+HOSTING ──leave──▶ IDLE          (broadcasts LEAVING; destroys peer)
+HOSTING ──transferHost──▶ FOLLOWING_WAIT ──re-joins──▶ FOLLOWING
+```
+
+Five states cover every lifecycle path. No `reconnecting`/`migrationAttempted`/`authoritativeSuccessor`/`intentionalLeave` flags orchestrating control flow — the FSM + one `migrating` re-entry guard is the complete model.
+
+#### The migration loop (`runMigration`)
+
+A single loop per client, driven by broker arbitration:
+
+1. Compute `iAmElector` and `rank`.
+    - If `LEAVING { nextHostId }` was received earlier, the designated is the sole elector; everyone else is a non-elector.
+    - If no LEAVING (unplanned host crash), exclude the presumed-dead `state.hostId` from the ranked candidates; rank-0 of what remains is the elector.
+2. Non-electors sit on `mayElectAfter = start + MIGRATION_GRACE_MS + rank * RANK_STAGGER_MS`. Within grace, they only try to join the winner as a client (`joinAsClient(wellKnown)`). If the designated / rank-0 takes the ID, everyone finishes during grace.
+3. **If grace expires without a winner** (e.g. the designated successor crashed mid-flip), non-electors unlock Phase B and also attempt `openPeer(wellKnown)`. Broker arbitration still guarantees a single host — the earliest-ranked surviving client usually wins by stagger, but anyone with a valid network can be the fallback. This is the mechanism that replaces the old `recoverNoHost` cascade without its split-brain cost.
+4. Whichever call succeeds first decides the state transition: `openPeer` success → `becomeHost`; `joinAsClient` success → `FOLLOWING`. Everyone else sees `unavailable-id` / `peer-unavailable` and keeps retrying.
+5. Total budget `MIGRATION_BUDGET_MS = 60 s`. On exhaustion: destroy everything, toast, `leaveRoom`. Graceful leave settles in ~5–10 s (broker releases the ID quickly on SCTP FIN). Dirty crash may take up to the full 60 s because the broker holds the crashed host's ID until its own `alive_timeout` — the trade-off for structural single-host-ness and a room that survives worst-case broker delays.
+
+Constants (`src/utils/peerManager.ts`):
+- `HEARTBEAT_INTERVAL_MS = 2000` — host broadcasts `STATE` every 2 s even without a local change (also serves as the heartbeat).
+- `HEARTBEAT_TIMEOUT_MS = 8000` — client watchdog; any inbound data resets it.
+- `MIGRATION_BUDGET_MS = 60000` — total runMigration window. Covers the full PeerJS broker `alive_timeout` on a dirty crash so the room doesn't die prematurely.
+- `MIGRATION_GRACE_MS = 10000` — non-elector passive-wait before Phase B unlocks.
+- `RANK_STAGGER_MS = 2000` — stagger between rank N and rank N+1 in Phase B.
+- `OPEN_PEER_TIMEOUT_MS = 3000`, `CONNECT_TIMEOUT_MS = 2500`, `MIGRATION_RETRY_INTERVAL_MS = 1000` — per-iteration timing.
+- `LEAVING_FLUSH_MS = 300` — delay between broadcasting LEAVING and destroying the peer, so SCTP can flush cross-network.
+- `KICK_REJECT_WINDOW_MS = 5000`, `KICK_MESSAGE_FLUSH_MS = 200`.
+- `GHOST_CLEANUP_DELAY_MS = 20000` — one-shot sweep after `becomeHost`.
+
+#### Message protocol (4 types)
+
+```ts
+STATE   { payload: RoomState }  // RoomState includes epoch + hostId + roomId + players + isRevealed
+ACTION  { epoch; payload: JOIN | SELECT_CARD | REVEAL | RESET | KICK | TRANSFER_HOST }
+LEAVING { epoch; nextHostId: string | null }
+KICKED  { epoch }
+```
+
+- No separate `PING` type: `STATE` doubles as the heartbeat (sent every 2 s even without a local change).
+- No `HOST_LEAVING_ACK`: the leaving host destroys after `LEAVING_FLUSH_MS`. Anyone who misses the LEAVING packet falls back to the watchdog + rank-based recovery path, which converges on the same outcome via broker arbitration — so the explicit ACK is redundant.
+- Every message carries the sender's current `epoch`. Receivers silently drop any with `epoch < localEpoch`. The exception is JOIN — a reconnecting client may have an older epoch until they receive our next STATE, and we must honor the join.
+- Messages are idempotent: STATE is a full snapshot, JOIN dedupes on `playerId`, LEAVING/KICKED are single-shot. No retries needed; the 2 s STATE heartbeat covers cross-network loss.
+
+#### Graceful leave / manual transfer
+
+- `HOSTING` client calls `leave()` or `transferHost(newHostId)`:
+  1. Broadcast `LEAVING { nextHostId }` to all connections. `nextHostId` is the designated successor (the target of `transferHost`, or oldest-non-host by `joinedAt` for `leave()`, or `null` if solo).
+  2. Wait `LEAVING_FLUSH_MS = 300 ms`.
+  3. Destroy own peer (releases the well-known ID at the broker).
+  4. `leave()`: done → IDLE.
+  5. `transferHost()`: re-enter as a client via the same `runMigration` loop (non-elector path), reconnects to the new host once they claim the well-known ID.
+
+- On the client side: `LEAVING` is received over the still-open hostConnection BEFORE the destroy; clients save `designatedSuccessor = nextHostId` and stay in FOLLOWING. When the hostConnection subsequently closes, `onHostConnectionLost` → `runMigration` with `designatedSuccessor` pre-seeded.
+
+- `LEAVING { nextHostId: null }`: sent when the last-remaining host leaves solo. Receivers interpret this as "room is closing", toast `roomEmpty`, and go straight to IDLE without attempting any migration.
+
+#### Kick flow
+
+`KICK` is dispatched only by the host. Host's `processAction('KICK')`:
+1. Remove victim from `state.players`.
+2. Record `kickedUntil.set(playerId, Date.now() + KICK_REJECT_WINDOW_MS)` — a 5 s window within which JOIN from that playerId is rejected.
+3. **Remove victim's DataConnection from `this.connections` BEFORE the trailing STATE broadcast.** Otherwise the kicked peer would race a STATE (that rebuilds `players` including them) against the KICKED message, briefly putting them back into the Room UI after they've leaveRoom'd.
+4. `send({ type: 'KICKED', epoch })` to the victim's conn.
+5. Wait `KICK_MESSAGE_FLUSH_MS = 200 ms` for SCTP to flush.
+6. Close the conn.
+
+Victim's `handleClientMessage` routes `KICKED` → `handleKicked`: set `intentionalLeave`, toast `youWereKicked`, `leaveRoom` (clears roomId → App re-renders Home), destroy peer. The 5 s rejection window defends against the case where KICKED itself is lost in transit — any JOIN within the window gets a fresh KICKED + close. Window is deliberately short: the kick is "stop the auto-reconnect loop", not a ban.
+
+#### Broker re-registration
+
+`peer.on('disconnected')` fires when the WebSocket to the PeerJS broker drops (tab backgrounded, network blip) while the Peer object is alive locally. The handler flips `connectionStatus='reconnecting'` and calls `peer.reconnect()` to re-register the same peer ID. A subsequent `peer.on('open')` flips status back to `connected`. The handler short-circuits when `intentionalLeave` is set, and `destroyPeer()` calls `removeAllListeners()` before `destroy()` — both prevent a reconnect-race during teardown that would hold the old peer ID alive on the broker.
+
+#### New joiner via `?room=XYZ`
+
+`joinRoomWithRetry(roomId, { onProgress })` returns `{ cancel, promise }`. Internally loops `joinAsClient(well-known)` with a 5 s per-attempt timeout until success or cancel (no internal time cap — the UI owns the way out). `onProgress` distinguishes `peer-unavailable` (ID not registered: room doesn't exist, or broker just released it mid-migration) from `timeout` (broker still has the ID but the peer is unreachable: migration likely in progress), so the UI can tell the user *why* it's waiting. `Home.tsx`'s JoinForm shows a spinner + progress message throughout; after `LONG_WAIT_PROMPT_MS = 30 s` a non-blocking amber banner offers Dismiss / Give up.
+
+#### Migration UI
+
+`src/components/MigrationOverlay.tsx` reads `migrationPhase` from the store (`'idle' | 'reclaiming' | 'waiting'`) and renders a semi-transparent overlay while migration runs. `ELECTING` sets `reclaiming`; `FOLLOWING_WAIT` sets `waiting`.
+
+#### Unload guard
+
+While `roomId` is set, `App.tsx` installs a `beforeunload` listener that triggers the browser's native "Leave site?" prompt on desktop/Android. iOS Safari ignores `beforeunload`, so `src/index.css` sets `overscroll-behavior-y: contain` on `html, body` to block pull-to-refresh. Address-bar refresh and swipe-back on iOS remain unblockable, but `playerId` persistence + URL `?room=XYZ` means a refreshed client can click Join to return.
 
 ### 4. Reconnection Identity
 
 - Because `playerId` is persisted, a client that refreshes or briefly disconnects rejoins under the same identity. The Host's `processAction` JOIN handler detects this: if the incoming `playerId` already exists in `players`, it updates `peerId` and `name` but preserves `joinedAt` (keeping host-election ordering stable), and emits a `{name} 已重新連上` toast. If the player is new, a `{name} 已加入` toast is shown.
 - When a client connection closes on the Host side, the Host looks up the player by matching `peerId`. The player is removed and a `{name} 已離線` toast is broadcast.
-- **Ghost cleanup after self-promote**: The per-connection close handler covers normal disconnects, but after `selfPromoteHost` the new host's `connections` map starts empty while the `players` map still carries everyone from the previous host's last broadcast — including the crashed old host. `selfPromoteHost` schedules a one-shot `scheduleGhostCleanup` (20 s) on success: live clients land back via direct-connect within that window, and anyone whose `peerId` still isn't in `connections.keys()` when the timer fires gets removed + toasted as offline. `transferHost` benefits from the same sweep — the demoting host rejoins as a client well before the 20 s mark. With heartbeat in place, DataConnection close events fire within seconds for genuinely gone peers too, so ghosts self-heal outside the sweep window.
+- **Ghost cleanup after `becomeHost`**: After a migration, the new host's `connections` map starts empty while the `players` map still carries everyone from the previous host's last broadcast — including the crashed old host. `becomeHost` schedules a one-shot `scheduleGhostCleanup` (`GHOST_CLEANUP_DELAY_MS = 20 s`): live clients land back via `runMigration`'s client-side loop within that window, and anyone whose `peerId` still isn't in `connections.keys()` when the timer fires gets removed + toasted as offline.
 
 ### 5. Arc Browser Support
 
@@ -109,7 +195,7 @@ Goal: **existing members reunited in ≈ 10 s** regardless of how long the PeerJ
 
 ## End-to-End Harness
 
-`scripts/e2e.js` is a thin CLI dispatcher over `scripts/e2e/modes/*.js` with shared utilities in `scripts/e2e/helpers.js`. 20 modes in total: a handful of diagnostic/interactive ones (no assertions) and 16 assertion modes that print a final `Result:` line. Replaces the old `test-host.js` / `test-live.js` / `test-live-e2e.js` / `test-10-clients.js` scripts.
+`scripts/e2e.js` is a thin CLI dispatcher over `scripts/e2e/modes/*.js` with shared utilities in `scripts/e2e/helpers.js`. 24 modes in total: a handful of diagnostic/interactive ones (no assertions) and 20 assertion modes that print a final `Result:` line.
 
 ### Prerequisites
 
@@ -151,6 +237,10 @@ Assertion modes (print `Result:` line; `Result:` with any `=false` = fail):
 - **`copy-toast`** — copy-room-id + copy-invite-link each surface a toast; both auto-dismiss within 4.5 s (> 3.5 s Toast timer). **Exits?** SIGINT. **Asserts:** `roomIdToast=true linkToast=true toastsAutoDismiss=true`.
 - **`solo-leave`** — solo host arms + confirms Leave via menu. Asserts back on Home and `?room=` is stripped from the URL. **Exits?** SIGINT. **Asserts:** `leftAfterConfirm=true backOnHome=true urlCleaned=true`.
 - **`panel-ux`** — Players panel close via X, Escape, and backdrop click. **Exits?** SIGINT. **Asserts:** `xCloses=true escapeCloses=true backdropCloses=true`.
+- **`split-brain`** — 1 host + 5 clients (overridable via `--count`; minimum 5), host transfers to Tester01. Regression lock on the real-world 5-client cross-network bug: multiple clients formerly fell into parallel `recoverNoHost` paths and each became a solo host. Under broker arbitration, every page must agree on hostId AND no page ends up as a solo host. **Exits?** SIGINT. **Asserts:** `allInRoom=true playerCountMatches=true hostIdConsistent=true noSoloHosts=true`.
+- **`crash-mid-transfer`** — host + 3 clients; host transfers to Tester02 (not rank-0) then Tester02 is force-closed before it can open the well-known ID. Asserts the rank-0 Phase-B fallback (original host) takes over via broker arbitration. **Exits?** SIGINT. **Asserts:** `hostRecovered=true allInRoom=true playerCountMatches=true`.
+- **`election-race`** — host + 4 clients; host page force-closed. Four clients' watchdogs fire nearly simultaneously and race to open the well-known ID. Asserts broker arbitration produces exactly one winner and every other client ends up FOLLOWING them. **Exits?** SIGINT. **Asserts:** `exactlyOneHost=true everyoneAgrees=true allInRoom=true playerCountMatches=true`.
+- **`partition`** — host + 4 clients; two clients (Tester03 + Tester04) leave simultaneously via menu. Asserts majority stays together with accurate playerCount and the departing pair is back on Home (no split-brain solo hosts). (Note: true network-partition simulation requires CDP-level control over UDP/WebRTC, which Puppeteer doesn't provide — this mode exercises the observable-close path instead.) **Exits?** SIGINT. **Asserts:** `majorityInRoom=true majorityCountMatches=true hostStill=true minorityLeftRoom=true`.
 
 Orchestrator:
 
@@ -194,7 +284,7 @@ When adding a new button or input that exercises app state, give it a `data-slot
 - `src/i18n/` — `react-i18next` setup and locale files (`locales/en.json`, `locales/zh-TW.json`).
 - `src/store/usePokerStore.ts` — Zustand state, persistence, and toast queue.
 - `src/utils/`
-  - `peerManager.ts` — PeerJS wrapper: `createRoom`, `joinRoom`, `joinViaHost`, `joinRoomWithRetry`, `onHostConnectionLost`, `handleHostDisconnect`, `handleHostLeaving`, `handleKicked`, `selfPromoteHost`, `directConnectToSuccessor`, `recoverNoHost`, `reclaimWellKnownInBackground`, `openWellKnownPeer`, `broadcastHostLeavingAndWait`, `transferHost`, `leave`. Heartbeat helpers: `startHeartbeatBroadcast` / `touchHeartbeat` / watchdog.
+  - `peerManager.ts` — PeerJS wrapper. FSM with 5 states (`IDLE` / `HOSTING` / `FOLLOWING` / `ELECTING` / `FOLLOWING_WAIT`). Public API: `createRoom`, `joinRoom`, `joinRoomWithRetry`, `leave`, `sendAction`. Internal: `runMigration` (single broker-arbitrated loop), `becomeHost`, `joinAsClient`, `decideElectorInfo`, `transferHost`, `handleKicked`, `startHeartbeat`/`touchWatchdog`, `scheduleGhostCleanup`. No secondary peer, no `reclaimWellKnownInBackground`, no `authoritativeSuccessor` / `migrationAttempted` flags — consensus is the broker's one-peer-per-ID guarantee at `scrum-poker-{roomId}`.
   - `roomId.ts` — Crockford Base32 generation and input normalisation.
   - `browserDetect.ts` — Arc detection via CSS variable.
   - `stats.ts` — pure `computeStats(players)` returning averages, min/max, consensus, distribution.
@@ -202,4 +292,6 @@ When adding a new button or input that exercises app state, give it a `data-slot
 ## Known Limitations
 
 - **No TURN server**: Peers behind symmetric NAT, corporate firewalls blocking UDP, or browsers with aggressive WebRTC privacy policies (Arc) may be unable to connect. Adding a TURN server would solve this at the cost of hosting infrastructure.
-- **Brief network blips trigger migration**: a 8 s+ network pause on a client's side (not the host's) looks identical to a dead host from its perspective. The Option A probe adds a 2 s forgiveness window, but longer blips will still start a migration and can briefly show the "switching host" overlay before natural recovery.
+- **Brief network blips trigger migration**: a 8 s+ network pause on a client's side (not the host's) looks identical to a dead host from its perspective. Under the new design the client lands in `runMigration`; if the real host is still there, they'll `joinAsClient(wellKnown)` succeed immediately and flip back to FOLLOWING. A migration overlay flashes briefly during the blip.
+- **Dirty-crash migration can take up to ~60 s**: when a host crashes without sending SCTP FIN (e.g. tab killed, network cut), the PeerJS broker may hold the well-known ID until its own `alive_timeout`. Clients keep trying `openPeer(wellKnown)` during `MIGRATION_BUDGET_MS = 60 s`; if the broker releases in time, a new host emerges. Beyond 60 s clients surface a "room lost" toast and invite rejoin. Graceful leave/transfer settles in ~5–10 s because `destroy()` sends FIN and the broker releases promptly.
+- **True network partition is not testable in Puppeteer**: CDP's `Network.emulateNetworkConditions({offline:true})` blocks HTTP requests but not the UDP/ICE layer used by WebRTC DataChannels. The `partition` e2e mode therefore uses graceful menu-leave on the minority side to exercise the observable-close handling. Real-world partition behavior is indirectly covered by `election-race` (simultaneous watchdog fires) and `crash-mid-transfer`.

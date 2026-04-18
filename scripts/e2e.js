@@ -93,6 +93,27 @@ Assertion modes (scenarios that print a final 'Result:' line):
   panel-ux      npm run e2e:panel-ux      [SIGINT]
                 Players panel backdrop / Escape / X close behaviors.
 
+  split-brain   npm run e2e:split-brain   [SIGINT]
+                1 host + 5 clients; host transfers to Tester01. Asserts
+                every page agrees on hostId and nobody ends up as a solo
+                host. Directly exercises the original real-world bug
+                that prompted the broker-arbitration rewrite.
+
+  crash-mid-transfer  npm run e2e:crash-mid-transfer  [SIGINT]
+                Transfer to a client, then kill that client before it
+                can open the well-known ID. Asserts the rank-0 fallback
+                (original host) takes over via broker arbitration.
+
+  election-race npm run e2e:election-race [SIGINT]
+                Force-close host, four clients simultaneously race to
+                open the well-known ID. Asserts broker arbitration
+                produces exactly one winner.
+
+  partition     npm run e2e:partition     [SIGINT]
+                3-vs-2 network partition via CDP offline mode. Asserts
+                majority keeps operating, minority cleanly leaves room
+                rather than split-braining into a solo host.
+
   all           npm run e2e:all           [EXITS 0/1]
                 Runs every assertion mode above sequentially as child
                 processes, parses each Result: line, exits 0 iff
@@ -175,6 +196,10 @@ const ALL_MODES = [
   'copy-toast',
   'solo-leave',
   'panel-ux',
+  'split-brain',
+  'crash-mid-transfer',
+  'election-race',
+  'partition',
   'all',
 ];
 
@@ -219,6 +244,10 @@ const MODE_TO_MODULE = {
   'copy-toast': './e2e/modes/copy-toast.js',
   'solo-leave': './e2e/modes/solo-leave.js',
   'panel-ux': './e2e/modes/panel-ux.js',
+  'split-brain': './e2e/modes/split-brain.js',
+  'crash-mid-transfer': './e2e/modes/crash-mid-transfer.js',
+  'election-race': './e2e/modes/election-race.js',
+  partition: './e2e/modes/partition.js',
   all: './e2e/modes/all.js',
 };
 

@@ -33,6 +33,10 @@ const MODES = [
   { name: 'copy-toast', args: () => [] },
   { name: 'solo-leave', args: () => [] },
   { name: 'panel-ux', args: () => [] },
+  { name: 'split-brain', args: () => [] },
+  { name: 'crash-mid-transfer', args: () => [] },
+  { name: 'election-race', args: () => [] },
+  { name: 'partition', args: () => [] },
 ];
 
 // `check` mode calls process.exit itself. Every other mode hangs
