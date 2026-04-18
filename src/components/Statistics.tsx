@@ -4,11 +4,21 @@ import { Target } from 'lucide-react';
 import { usePokerStore } from '../store/usePokerStore';
 import { computeStats } from '../utils/stats';
 
-function MetricCard({ label, value }: { label: string; value: string }) {
+function MetricCard({
+  label,
+  value,
+  statSlot,
+}: {
+  label: string;
+  value: string;
+  statSlot: string;
+}) {
   return (
     <div className="flex-1 bg-gray-50 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 rounded-lg p-3 text-center">
       <div className="text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400">{label}</div>
-      <div className="text-2xl font-bold mt-0.5 font-mono">{value}</div>
+      <div data-stat={statSlot} className="text-2xl font-bold mt-0.5 font-mono">
+        {value}
+      </div>
     </div>
   );
 }
@@ -62,6 +72,7 @@ export default function Statistics() {
         {stats.consensus !== null && (
           <motion.div
             key="consensus"
+            data-stat="consensus"
             initial={animationsEnabled ? { scale: 0.6, opacity: 0 } : false}
             animate={{ scale: 1, opacity: 1 }}
             exit={animationsEnabled ? { scale: 0.6, opacity: 0 } : undefined}
@@ -85,12 +96,21 @@ export default function Statistics() {
         <MetricCard
           label={t('stats.average')}
           value={stats.average !== null ? String(stats.average) : '—'}
+          statSlot="average"
         />
-        <MetricCard label={t('stats.min')} value={stats.min !== null ? String(stats.min) : '—'} />
-        <MetricCard label={t('stats.max')} value={stats.max !== null ? String(stats.max) : '—'} />
+        <MetricCard
+          label={t('stats.min')}
+          value={stats.min !== null ? String(stats.min) : '—'}
+          statSlot="min"
+        />
+        <MetricCard
+          label={t('stats.max')}
+          value={stats.max !== null ? String(stats.max) : '—'}
+          statSlot="max"
+        />
       </div>
 
-      <div className="flex flex-col gap-1.5">
+      <div data-stat="distribution" className="flex flex-col gap-1.5">
         <div className="text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400">
           {t('stats.distribution')}
         </div>
@@ -98,7 +118,12 @@ export default function Statistics() {
           <div className="text-sm text-gray-400">{t('stats.noVotes')}</div>
         ) : (
           stats.distribution.map((d, idx) => (
-            <div key={d.card} className="flex items-center gap-2 text-sm">
+            <div
+              key={d.card}
+              data-card-value={d.card}
+              data-card-count={d.count}
+              className="flex items-center gap-2 text-sm"
+            >
               <span className="w-8 text-right font-mono font-semibold text-gray-700 dark:text-gray-300">
                 {d.card}
               </span>

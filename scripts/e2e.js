@@ -2,24 +2,15 @@
 /**
  * End-to-end browser automation for Scrum Poker, driven by Puppeteer.
  *
- * Replaces the old test-host / test-live / test-live-e2e / test-10-clients
- * scripts. Pick a mode and pass flags:
- *
- *   node scripts/e2e.js --mode host   --url https://lab.howar31.com/scrum-poker
- *   node scripts/e2e.js --mode swarm  --url ... --room ABCDEFG --count 10
- *   node scripts/e2e.js --mode e2e    --url ... --count 5
- *   node scripts/e2e.js --mode observe --url ... --room ABCDEFG
- *
- * Or via npm scripts (see package.json):
- *   npm run e2e:swarm -- --room ABCDEFG --count 5
+ * Thin entry point: parses CLI flags and dispatches to a mode module
+ * under scripts/e2e/modes/. Each mode is a small self-contained file.
+ * Shared primitives (setupRoom, snap, pickCard, etc.) live in
+ * scripts/e2e/helpers.js.
  *
  * Run `--help` for the full flag list.
  */
-import puppeteer from 'puppeteer';
 import { parseArgs } from 'node:util';
-import { setTimeout as delay } from 'node:timers/promises';
-
-const CARDS = ['0', '0.5', '1', '2', '3', '5', '8', '13', '21', '?', '☕'];
+import { launchBrowser } from './e2e/helpers.js';
 
 const HELP_TEXT = `
 Scrum Poker E2E driver
@@ -29,83 +20,117 @@ Usage:
   (or: npm run e2e:<mode> -- [flags])
 
 Prerequisites:
-  Either run 'npm run dev' first (default target http://localhost:5173),
-  or pass --url pointing at a deployed build.
+  Either run 'npm run dev' (or 'VITE_E2E=1 npm run dev' to enable the
+  test-only window.__POKER_STATE__ hook that some modes require), or
+  pass --url pointing at a deployed build.
 
-Modes:
-  host      npm run e2e:host      [no exit, SIGINT to stop]
-            Create a room and stay alive. Prints the Room ID on success.
-            --duration <sec> makes it finite. Passes when: Room ID printed.
+Assertion modes (scenarios that print a final 'Result:' line):
+  check         npm run e2e:check         [EXITS 0/1]
+                Host + N clients join, assert every TesterNN is visible.
+                The only mode with a real exit code.
 
-  swarm     npm run e2e:swarm     [no exit, SIGINT to stop]
-            Spawn N clients that join an existing --room and randomly vote.
-            Requires --room. --verbose N forwards browser console from the
-            first N clients. Passes when: all clients visible in the host.
+  vote          npm run e2e:vote          [SIGINT]
+                Host + 3 clients pick 3/5/☕, host reveals. Asserts
+                Statistics panel shows average=4 min=3 max=5 and
+                distribution includes ☕. Then host resets and asserts
+                every card is back to unselected.
 
-  e2e       npm run e2e:check     [EXITS with code 0 or 1]
-            Create host + spawn N clients, assert host DOM shows every
-            TesterNN name, exit. Suitable for CI.
+  refresh       npm run e2e:refresh       [SIGINT]
+                Client reloads mid-session. Asserts playerId persists
+                (same room, same player count, vote preserved).
 
-  observe   npm run e2e:observe   [no exit, SIGINT to stop]
-            Single silent client joins --room and forwards browser console
-            + pageerrors. Debug helper.
+  state-persist npm run e2e:state         [SIGINT]
+                Everyone votes, host reveals, host transfers to
+                Tester01. Asserts votes + isRevealed survive the
+                migration.
 
-  transfer  npm run e2e:transfer  [no exit, SIGINT to stop]
-            host + N clients (default 2), bot-driven graceful host transfer
-            from host to Tester01. Exercises HOST_LEAVING + ACK + direct-
-            connect + background well-known reclaim.
-            Passes when the final line prints:
-              Result: allInRoom=true playerCountMatches=true expected=<N+1>
+  transfer      npm run e2e:transfer      [SIGINT]
+                Bot-driven graceful host transfer. Exercises
+                HOST_LEAVING + ACK + direct-connect + reclaim.
+                Asserts: allInRoom=true playerCountMatches=true.
 
-  crash     npm run e2e:crash     [no exit, SIGINT to stop]
-            host + N clients (default 3), closes the host page abruptly
-            (no HOST_LEAVING). Exercises heartbeat watchdog → probe →
-            handleHostDisconnect → self-promote + direct/well-known reconnect.
-            Passes when the final line prints:
-              Result: allInRoom=true playerCountMatches=true expected=<N>
+  crash         npm run e2e:crash         [SIGINT]
+                Host page is abruptly closed (no HOST_LEAVING).
+                Exercises heartbeat → probe → handleHostDisconnect →
+                self-promote. Asserts survivors reunite.
 
-  kick      npm run e2e:kick      [no exit, SIGINT to stop]
-            host + N clients (default 3), host kicks Tester01 and waits
-            past the 5 s reject window. Regression guard for the
-            "kicked-but-auto-rejoins" bug.
-            Passes when the final line prints:
-              Result: tester01Left=true survivorsInRoom=true playerCountMatches=true
+  kick          npm run e2e:kick          [SIGINT]
+                Host kicks Tester01. Asserts they end up on Home, not
+                auto-rejoined; survivors still in room.
 
-  Only 'e2e' (npm run e2e:check) sets an exit code. For the other
-  assertion modes (transfer / crash / kick), grep the stdout for the
-  Result line or pipe to a shell check, e.g.:
-    npm run e2e:transfer -- --count 3 2>&1 | tee out.log
-    grep -q 'allInRoom=true playerCountMatches=true' out.log && echo OK
+  kick-window   npm run e2e:kick-window   [SIGINT]
+                Asserts the 5 s kicked-ID reject window blocks auto-
+                reconnect but lets a manual re-join through afterwards.
+
+  late-joiner   npm run e2e:late-joiner   [SIGINT]
+                Spawns a fresh client while a host transfer is
+                in-flight. Asserts they eventually land in the room.
+
+  deadman       npm run e2e:deadman       [SIGINT]
+                Transfer to a non-oldest client, then kill that client
+                before it can selfPromote. Asserts the rank-0 fallback
+                (the original host) recovers the room.
+
+  disarm        npm run e2e:disarm        [SIGINT]
+                Arms kick on Tester01, waits > 3 s, asserts next click
+                re-arms instead of firing (auto-disarm works).
+
+  join-ux       npm run e2e:join-ux       [SIGINT]
+                Home URL routing, roomId normalization, cancel button,
+                30 s long-wait banner.
+
+  settings      npm run e2e:settings      [SIGINT]
+                Theme / language / animations toggles + persistence.
+
+  copy-toast    npm run e2e:copy-toast    [SIGINT]
+                Copy room ID + invite link surface toasts; toasts
+                auto-dismiss after 3.5 s.
+
+  solo-leave    npm run e2e:solo-leave    [SIGINT]
+                Solo host leaves via menu; asserts back on Home,
+                ?room= stripped.
+
+  panel-ux      npm run e2e:panel-ux      [SIGINT]
+                Players panel backdrop / Escape / X close behaviors.
+
+  all           npm run e2e:all           [EXITS 0/1]
+                Runs every assertion mode above sequentially as child
+                processes, parses each Result: line, exits 0 iff
+                every sub-mode passes.
+
+Interactive / diagnostic modes (no final Result: line):
+  host          npm run e2e:host          [no exit]   Create room, stay alive.
+  swarm         npm run e2e:swarm         [no exit]   N random-voting clients.
+  observe       npm run e2e:observe       [no exit]   Single client + console forwarding.
 
 Flags:
   --url <url>                   Base app URL (default: http://localhost:5173)
   --room <id>                   Room ID (required for swarm / observe)
-  --count <n>                   Number of clients for swarm / e2e / transfer / crash / kick
-  --verbose <n>                 Forward full browser console for the first N swarm clients (default: 0)
-  --vote-probability <0..1>     Chance each swarm client votes (default: 0.7)
-  --stagger <ms>                Delay between spawning each swarm client (default: 2500)
+  --count <n>                   Number of clients (default: 10; modes may default lower)
+  --verbose <n>                 Forward full browser console for first N swarm clients (default: 0)
+  --vote-probability <0..1>     Swarm: chance each client votes (default: 0.7)
+  --stagger <ms>                Swarm: delay between spawns (default: 2500)
   --duration <sec>              Exit after N seconds (host mode; default: stay alive)
   --headless <true|false>       Run browsers headless (default: true)
   --name <name>                 Override the auto-generated display name
   --help                        Show this message
 
+Interpreting results:
+  Only 'check' and 'all' set an exit code. For the other assertion
+  modes, grep the stdout for a passing Result: line, e.g.:
+    npm run e2e:transfer -- --count 3 2>&1 | tee out.log
+    grep -q 'allInRoom=true playerCountMatches=true' out.log && echo OK
+
 Examples:
-  # CI-style exit-code assertion
-  npm run e2e:check -- --count 5
-
-  # Migration regression suite against a local dev server
-  npm run e2e:transfer -- --count 3
-  npm run e2e:crash -- --count 3
-  npm run e2e:kick -- --count 3
-
-  # Load-test: 10 random-voting clients against a deployed build
-  npm run e2e:swarm -- --url https://lab.howar31.com/scrum-poker --room ABC1234 --count 10
-
-  # Swarm + forward console from the first 2 clients
-  npm run e2e:swarm -- --room XXX --count 10 --verbose 2
+  npm run e2e:all                                          # run the whole suite
+  npm run e2e:check -- --count 5                           # CI smoke test
+  npm run e2e:vote                                         # voting flow
+  npm run e2e:transfer -- --count 3                        # host migration
+  npm run e2e:swarm -- --room ABC1234 --count 10 --verbose 2   # load test
+  npm run e2e:host -- --url https://lab.howar31.com/scrum-poker --duration 60
 `;
 
-// ---- CLI parsing -------------------------------------------------------
+// ---- CLI parsing ------------------------------------------------------
 
 const parsed = parseArgs({
   strict: false,
@@ -129,572 +154,83 @@ if (parsed.values.help) {
   process.exit(0);
 }
 
-const mode = parsed.values.mode;
-const baseUrl = (parsed.values.url ?? '').replace(/\/$/, '');
-const roomArg = parsed.values.room;
-const count = parseInt(parsed.values.count, 10);
-const verboseCount = parseInt(parsed.values.verbose, 10);
-const voteProbability = parseFloat(parsed.values['vote-probability']);
-const staggerMs = parseInt(parsed.values.stagger, 10);
-const durationSec = parsed.values.duration ? parseInt(parsed.values.duration, 10) : null;
-const headless = parsed.values.headless !== 'false';
-const nameOverride = parsed.values.name;
+const ALL_MODES = [
+  'host',
+  'swarm',
+  'e2e', // back-compat alias for 'check'
+  'check',
+  'observe',
+  'transfer',
+  'crash',
+  'kick',
+  'vote',
+  'refresh',
+  'kick-window',
+  'late-joiner',
+  'deadman',
+  'state-persist',
+  'disarm',
+  'join-ux',
+  'settings',
+  'copy-toast',
+  'solo-leave',
+  'panel-ux',
+  'all',
+];
 
-if (
-  !mode ||
-  !['host', 'swarm', 'e2e', 'observe', 'transfer', 'crash', 'kick'].includes(mode)
-) {
+const mode = parsed.values.mode;
+if (!mode || !ALL_MODES.includes(mode)) {
   console.error('Error: missing or invalid --mode. Run with --help for options.');
   process.exit(1);
 }
 
-// ---- Browser / page helpers -------------------------------------------
-
-async function openPage(browser, { isolated }) {
-  // `isolated: true` gives the page its own localStorage so zustand's
-  // persisted `playerId` doesn't collide with other concurrent clients.
-  const context = isolated
-    ? browser.createBrowserContext
-      ? await browser.createBrowserContext()
-      : await browser.createIncognitoBrowserContext()
-    : browser.defaultBrowserContext();
-  return context.newPage();
-}
-
-async function fillName(page, name) {
-  await page.waitForSelector('[data-slot="home-name"]', { timeout: 15000 });
-  await page.type('[data-slot="home-name"]', name);
-}
-
-async function clickSlot(page, slot) {
-  return page.evaluate((id) => {
-    const el = document.querySelector(`[data-slot="${id}"]`);
-    if (el instanceof HTMLElement) {
-      el.click();
-      return true;
-    }
-    return false;
-  }, slot);
-}
-
-// The Room component only mounts after the first STATE_UPDATE broadcast
-// arrives. The hand rail cards carry a stable `data-slot="hand-card"`
-// attribute — waiting for one is language- and text-transform-agnostic.
-async function waitForRoomRender(page, timeoutMs = 25000) {
-  await page.waitForSelector('[data-slot="hand-card"]', { timeout: timeoutMs });
-}
-
-async function getRoomIdFromUrl(page) {
-  const url = new URL(page.url());
-  return url.searchParams.get('room');
-}
-
-// ---- Voting ------------------------------------------------------------
-
-async function tryVote(page, name) {
-  if (Math.random() > voteProbability) {
-    console.log(`[${name}] sitting out`);
-    return;
-  }
-  const pick = CARDS[Math.floor(Math.random() * CARDS.length)];
-  try {
-    const clicked = await page.evaluate((value) => {
-      const target = document.querySelector(
-        `[data-slot="hand-card"][data-card-value="${value}"]`
-      );
-      if (target instanceof HTMLElement) {
-        target.click();
-        return true;
-      }
-      return false;
-    }, pick);
-    console.log(clicked ? `[${name}] voted ${pick}` : `[${name}] vote button missing`);
-  } catch (err) {
-    console.log(`[${name}] vote failed:`, err.message);
-  }
-}
-
-// ---- Client spawners --------------------------------------------------
-
-async function spawnSwarmClient(browser, name, joinUrl, { verbose = false } = {}) {
-  const page = await openPage(browser, { isolated: true });
-  page.on('pageerror', (err) => console.log(`[${name}] pageerror:`, err.message));
-  if (verbose) {
-    // Forward everything — used when you need to see PeerJS signaling
-    // errors, migration state transitions, etc. Truncate to keep one
-    // line per log.
-    page.on('console', (msg) => console.log(`[${name}]`, msg.text().slice(0, 250)));
-  }
-  try {
-    await page.goto(joinUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
-    await fillName(page, name);
-    await clickSlot(page, 'home-join');
-    try {
-      await waitForRoomRender(page);
-      console.log(`[${name}] joined${verbose ? ' (verbose)' : ''}`);
-      setTimeout(() => tryVote(page, name), 1500 + Math.random() * 4500);
-    } catch {
-      // Hand rail never appeared. Dump a short snapshot so we can tell
-      // the difference between "still on Home with error banner" vs
-      // "joined but detection selector is wrong".
-      const snapshot = await page
-        .evaluate(() => document.body.innerText.slice(0, 200).replace(/\s+/g, ' '))
-        .catch(() => '(unreadable)');
-      console.log(`[${name}] never saw hand rail. body="${snapshot}"`);
-    }
-  } catch (err) {
-    console.log(`[${name}] setup failed:`, err.message);
-  }
-  return page;
-}
-
-// ---- Modes ------------------------------------------------------------
-
-async function runHost(browser) {
-  const page = await openPage(browser, { isolated: false });
-  page.on('pageerror', (err) => console.log('[host] pageerror:', err.message));
-
-  console.log(`Creating a room at ${baseUrl}...`);
-  await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
-  await fillName(page, nameOverride ?? 'Host');
-  await clickSlot(page, 'home-create');
-  await waitForRoomRender(page);
-
-  const roomId = await getRoomIdFromUrl(page);
-  console.log(`\n✅ Room created: ${roomId}`);
-  console.log(`Invite URL: ${baseUrl}/?room=${roomId}\n`);
-
-  if (durationSec != null) {
-    console.log(`Staying alive for ${durationSec}s...`);
-    await delay(durationSec * 1000);
-    return;
-  }
-  console.log('Stay-alive mode — Ctrl+C to exit.');
-  await new Promise(() => {});
-}
-
-async function runSwarm(browser) {
-  if (!roomArg) {
-    console.error('Error: --room is required for swarm mode');
-    process.exit(1);
-  }
-  const joinUrl = `${baseUrl}/?room=${roomArg}`;
-  const verboseMsg = verboseCount > 0 ? ` (${verboseCount} verbose)` : '';
-  console.log(`Spawning ${count} clients${verboseMsg} at ${joinUrl}`);
-
-  for (let i = 0; i < count; i++) {
-    const name = `Tester${String(i + 1).padStart(2, '0')}`;
-    spawnSwarmClient(browser, name, joinUrl, { verbose: i < verboseCount });
-    if (i < count - 1) await delay(staggerMs);
-  }
-
-  console.log(`\nAll ${count} clients spawned. Votes trickle in over the next few seconds.`);
-  console.log('Ctrl+C to exit.');
-  await new Promise(() => {});
-}
-
-async function runE2E(browser) {
-  console.log(`Running E2E check with ${count} clients at ${baseUrl}`);
-
-  // Phase 1: host creates room.
-  const hostPage = await openPage(browser, { isolated: false });
-  await hostPage.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
-  await fillName(hostPage, 'Host');
-  await clickSlot(hostPage, 'home-create');
-  await waitForRoomRender(hostPage);
-  const roomId = await getRoomIdFromUrl(hostPage);
-  console.log(`Host created room ${roomId}`);
-
-  // Phase 2: spawn N clients into that room.
-  const joinUrl = `${baseUrl}/?room=${roomId}`;
-  for (let i = 0; i < count; i++) {
-    const name = `Tester${String(i + 1).padStart(2, '0')}`;
-    await spawnSwarmClient(browser, name, joinUrl, { verbose: i < verboseCount });
-    if (i < count - 1) await delay(800);
-  }
-
-  // Phase 3: let JOIN actions propagate, then assert host sees everyone.
-  await delay(5000);
-  const body = await hostPage.evaluate(() => document.body.innerText);
-  const seen = new Set(body.match(/Tester\d{2}/g) ?? []);
-  if (seen.size >= count) {
-    console.log(`\n✅ E2E PASS: host sees ${seen.size}/${count} clients`);
-    process.exit(0);
-  }
-  console.log(`\n❌ E2E FAIL: host only sees ${seen.size}/${count} clients`);
-  console.log('Seen:', [...seen].sort().join(', '));
-  process.exit(1);
-}
-
-async function runObserve(browser) {
-  if (!roomArg) {
-    console.error('Error: --room is required for observe mode');
-    process.exit(1);
-  }
-  const joinUrl = `${baseUrl}/?room=${roomArg}`;
-  const page = await openPage(browser, { isolated: false });
-  page.on('console', (msg) => console.log('[observe]', msg.text().slice(0, 250)));
-  page.on('pageerror', (err) => console.log('[observe] pageerror:', err.message));
-
-  console.log(`Joining ${joinUrl} as silent observer...`);
-  await page.goto(joinUrl, { waitUntil: 'domcontentloaded' });
-  await fillName(page, nameOverride ?? 'Observer');
-  await clickSlot(page, 'home-join');
-
-  try {
-    await waitForRoomRender(page, 20000);
-    console.log('[observe] joined');
-  } catch {
-    console.log('[observe] failed to enter room (see logs above)');
-  }
-
-  console.log('Observing — Ctrl+C to exit.');
-  await new Promise(() => {});
-}
-
-// ---- Entry point ------------------------------------------------------
-
-// Host creates a room, N clients join, then the host drives a two-click
-// transfer to the first Tester. Everything runs verbose so the console
-// timeline shows HOST_LEAVING broadcast → reclaim attempts on the new
-// host → waiting + scheduleReconnect on other clients → final state.
-async function runTransfer(browser) {
-  const clientCount = count || 2;
-  console.log(`Transfer scenario: 1 host + ${clientCount} clients at ${baseUrl}`);
-
-  // Host (default context so its console mirrors a real user's browser).
-  const hostPage = await openPage(browser, { isolated: false });
-  hostPage.on('console', (msg) => console.log('[Host]', msg.text().slice(0, 250)));
-  hostPage.on('pageerror', (err) => console.log('[Host] pageerror:', err.message));
-
-  await hostPage.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
-  await fillName(hostPage, 'Host');
-  await clickSlot(hostPage, 'home-create');
-  await waitForRoomRender(hostPage);
-  const roomId = await getRoomIdFromUrl(hostPage);
-  console.log(`Host created room ${roomId}\n`);
-
-  // Clients — isolated so playerIds don't collide. Keep page handles so
-  // we can snapshot each one post-transfer to verify nobody got kicked
-  // out during migration.
-  const joinUrl = `${baseUrl}/?room=${roomId}`;
-  const clientPages = [];
-  for (let i = 0; i < clientCount; i++) {
-    const name = `Tester${String(i + 1).padStart(2, '0')}`;
-    const page = await spawnSwarmClient(browser, name, joinUrl, { verbose: true });
-    clientPages.push({ name, page });
-    await delay(1500);
-  }
-
-  console.log('\nLetting JOINs settle for 5 s...');
-  await delay(5000);
-
-  // Host triggers transfer on Tester01. Open players panel → find
-  // Tester01's row → click make-host twice (arm + confirm).
-  console.log('\n>>> Host clicking Players pill <<<');
-  await clickSlot(hostPage, 'players-pill');
-  await delay(600);
-
-  console.log('>>> Host clicking make-host on Tester01 (1/2: arm) <<<');
-  const tester01Id = await hostPage.evaluate(() => {
-    const row = Array.from(document.querySelectorAll('[data-slot="player-row"]')).find(
-      (el) => el.textContent?.includes('Tester01')
-    );
-    return row?.getAttribute('data-player-id') ?? null;
-  });
-  if (!tester01Id) {
-    console.log('❌ Could not find Tester01 in player list');
-    return;
-  }
-  console.log(`Tester01 playerId = ${tester01Id}`);
-
-  const clickMakeHost = () =>
-    hostPage.evaluate((pid) => {
-      const btn = document.querySelector(
-        `[data-slot="player-make-host"][data-player-id="${pid}"]`
-      );
-      if (btn instanceof HTMLElement) {
-        btn.click();
-        return true;
-      }
-      return false;
-    }, tester01Id);
-
-  const armed = await clickMakeHost();
-  console.log(armed ? 'Armed OK' : '❌ Could not arm');
-  await delay(500);
-
-  console.log('>>> Host clicking make-host on Tester01 (2/2: confirm) <<<');
-  const confirmed = await clickMakeHost();
-  console.log(confirmed ? 'Confirmed OK — transfer triggered' : '❌ Could not confirm');
-
-  console.log('\nObserving for 20 s...');
-  await delay(20000);
-
-  // Post-mortem snapshot from every page so we can tell at a glance
-  // whether anyone was dropped by the migration. Also asserts the player
-  // count in the new host's view matches the spawned total.
-  const snap = async (page, label) => {
-    const data = await page
-      .evaluate(() => {
-        const status = document
-          .querySelector('[data-slot="connection-status"]')
-          ?.getAttribute('data-status');
-        const roomBanner = document
-          .querySelector('[data-slot="copy-room-id"]')
-          ?.textContent?.trim();
-        const inRoom = !!document.querySelector('[data-slot="hand-card"]');
-        // Players pill shows the total count as its trailing text node.
-        const pillText = document
-          .querySelector('[data-slot="players-pill"]')
-          ?.textContent?.trim();
-        const playerCount = pillText ? (pillText.match(/\d+/)?.[0] ?? null) : null;
-        return { status, roomBanner, inRoom, playerCount };
-      })
-      .catch(() => null);
-    console.log(`[${label}]`, JSON.stringify(data));
-    return data;
-  };
-
-  console.log('\n>>> Final snapshots <<<');
-  const hostSnap = await snap(hostPage, 'Host (ex-host)');
-  const clientSnaps = [];
-  for (const { name, page } of clientPages) {
-    clientSnaps.push({ name, snap: await snap(page, name) });
-  }
-
-  const expectedCount = clientCount + 1; // host + clients
-  const allInRoom =
-    hostSnap?.inRoom && clientSnaps.every((c) => c.snap?.inRoom);
-  const countMatches = clientSnaps.every(
-    (c) => String(c.snap?.playerCount) === String(expectedCount)
-  );
-  console.log(
-    `\nResult: allInRoom=${allInRoom} playerCountMatches=${countMatches} expected=${expectedCount}`
-  );
-
-  console.log('\nDone. Ctrl+C to exit — leaving browsers open for inspection.');
-  await new Promise(() => {});
-}
-
-// Unplanned-disconnect simulation: host creates room, N clients join, then
-// the host's page is killed abruptly (no HOST_LEAVING broadcast). Exercises
-// heartbeat detection → Option A probe → handleHostDisconnect → migration
-// path, which transfer mode does NOT cover (that one fires HOST_LEAVING).
-async function runCrash(browser) {
-  const clientCount = count || 3;
-  console.log(`Crash scenario: 1 host + ${clientCount} clients at ${baseUrl}`);
-
-  const hostPage = await openPage(browser, { isolated: false });
-  hostPage.on('console', (msg) => console.log('[Host]', msg.text().slice(0, 250)));
-  hostPage.on('pageerror', (err) => console.log('[Host] pageerror:', err.message));
-
-  await hostPage.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
-  await fillName(hostPage, 'Host');
-  await clickSlot(hostPage, 'home-create');
-  await waitForRoomRender(hostPage);
-  const roomId = await getRoomIdFromUrl(hostPage);
-  console.log(`Host created room ${roomId}\n`);
-
-  const joinUrl = `${baseUrl}/?room=${roomId}`;
-  const clientPages = [];
-  for (let i = 0; i < clientCount; i++) {
-    const name = `Tester${String(i + 1).padStart(2, '0')}`;
-    const page = await spawnSwarmClient(browser, name, joinUrl, { verbose: true });
-    clientPages.push({ name, page });
-    await delay(1500);
-  }
-
-  console.log('\nLetting JOINs settle for 5 s...');
-  await delay(5000);
-
-  // Abrupt kill — no HOST_LEAVING, just the tab vanishing mid-session.
-  // Closing the page tears down the Peer's WebSocket but skips the normal
-  // teardown listeners, which is exactly what a real crash looks like from
-  // each client's perspective.
-  console.log('\n>>> Closing host page without any graceful leave <<<');
-  await hostPage.close();
-
-  console.log('\nObserving clients for 30 s while migration runs...');
-  await delay(30000);
-
-  const snap = async (page, label) => {
-    const data = await page
-      .evaluate(() => {
-        const status = document
-          .querySelector('[data-slot="connection-status"]')
-          ?.getAttribute('data-status');
-        const roomBanner = document
-          .querySelector('[data-slot="copy-room-id"]')
-          ?.textContent?.trim();
-        const inRoom = !!document.querySelector('[data-slot="hand-card"]');
-        const pillText = document
-          .querySelector('[data-slot="players-pill"]')
-          ?.textContent?.trim();
-        const playerCount = pillText ? (pillText.match(/\d+/)?.[0] ?? null) : null;
-        return { status, roomBanner, inRoom, playerCount };
-      })
-      .catch(() => null);
-    console.log(`[${label}]`, JSON.stringify(data));
-    return data;
-  };
-
-  console.log('\n>>> Final snapshots (host excluded — it was killed) <<<');
-  const clientSnaps = [];
-  for (const { name, page } of clientPages) {
-    clientSnaps.push({ name, snap: await snap(page, name) });
-  }
-
-  const expectedCount = clientCount; // host is gone
-  const allInRoom = clientSnaps.every((c) => c.snap?.inRoom);
-  const countMatches = clientSnaps.every(
-    (c) => String(c.snap?.playerCount) === String(expectedCount)
-  );
-  console.log(
-    `\nResult: allInRoom=${allInRoom} playerCountMatches=${countMatches} expected=${expectedCount}`
-  );
-
-  console.log('\nDone. Ctrl+C to exit.');
-  await new Promise(() => {});
-}
-
-// Kick-out regression: host kicks Tester01 via the Players panel, we wait
-// out any auto-reconnect window, then assert Tester01 really left (Home
-// page visible, not a hand rail) and the remaining room shows the correct
-// reduced playerCount. Catches the "reconnect loop too eager, kicked
-// player pops right back" bug.
-async function runKick(browser) {
-  const clientCount = count || 3;
-  console.log(`Kick scenario: 1 host + ${clientCount} clients at ${baseUrl}`);
-
-  const hostPage = await openPage(browser, { isolated: false });
-  hostPage.on('console', (msg) => console.log('[Host]', msg.text().slice(0, 250)));
-  hostPage.on('pageerror', (err) => console.log('[Host] pageerror:', err.message));
-
-  await hostPage.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
-  await fillName(hostPage, 'Host');
-  await clickSlot(hostPage, 'home-create');
-  await waitForRoomRender(hostPage);
-  const roomId = await getRoomIdFromUrl(hostPage);
-  console.log(`Host created room ${roomId}\n`);
-
-  const joinUrl = `${baseUrl}/?room=${roomId}`;
-  const clientPages = [];
-  for (let i = 0; i < clientCount; i++) {
-    const name = `Tester${String(i + 1).padStart(2, '0')}`;
-    const page = await spawnSwarmClient(browser, name, joinUrl, { verbose: true });
-    clientPages.push({ name, page });
-    await delay(1500);
-  }
-
-  console.log('\nLetting JOINs settle for 5 s...');
-  await delay(5000);
-
-  // Host triggers kick on Tester01. Open players panel → find row → click
-  // player-kick twice (arm + confirm).
-  console.log('\n>>> Host clicking Players pill <<<');
-  await clickSlot(hostPage, 'players-pill');
-  await delay(600);
-
-  const tester01Id = await hostPage.evaluate(() => {
-    const row = Array.from(document.querySelectorAll('[data-slot="player-row"]')).find(
-      (el) => el.textContent?.includes('Tester01')
-    );
-    return row?.getAttribute('data-player-id') ?? null;
-  });
-  if (!tester01Id) {
-    console.log('❌ Could not find Tester01 in player list');
-    return;
-  }
-  console.log(`Tester01 playerId = ${tester01Id}`);
-
-  const clickKick = () =>
-    hostPage.evaluate((pid) => {
-      const btn = document.querySelector(
-        `[data-slot="player-kick"][data-player-id="${pid}"]`
-      );
-      if (btn instanceof HTMLElement) {
-        btn.click();
-        return true;
-      }
-      return false;
-    }, tester01Id);
-
-  console.log('>>> Host clicking kick on Tester01 (1/2: arm) <<<');
-  const armed = await clickKick();
-  console.log(armed ? 'Armed OK' : '❌ Could not arm');
-  await delay(500);
-
-  console.log('>>> Host clicking kick on Tester01 (2/2: confirm) <<<');
-  const confirmed = await clickKick();
-  console.log(confirmed ? 'Confirmed OK — kick triggered' : '❌ Could not confirm');
-
-  // Wait longer than KICK_REJECT_WINDOW_MS (5 s) so we also prove the
-  // reject window expires cleanly without the kicked client popping back
-  // in during it. If they were going to reconnect, they would've by now.
-  console.log('\nObserving for 10 s (covers the 5 s reject window)...');
-  await delay(10000);
-
-  const snap = async (page, label) => {
-    const data = await page
-      .evaluate(() => {
-        const status = document
-          .querySelector('[data-slot="connection-status"]')
-          ?.getAttribute('data-status');
-        const roomBanner = document
-          .querySelector('[data-slot="copy-room-id"]')
-          ?.textContent?.trim();
-        const inRoom = !!document.querySelector('[data-slot="hand-card"]');
-        // Kicked clients should land back on Home, which shows
-        // home-create (no ?room=) or home-join (with ?room=). Either
-        // presence signals we're not in a Room anymore.
-        const onHome =
-          !!document.querySelector('[data-slot="home-create"]') ||
-          !!document.querySelector('[data-slot="home-join"]');
-        const pillText = document
-          .querySelector('[data-slot="players-pill"]')
-          ?.textContent?.trim();
-        const playerCount = pillText ? (pillText.match(/\d+/)?.[0] ?? null) : null;
-        return { status, roomBanner, inRoom, onHome, playerCount };
-      })
-      .catch(() => null);
-    console.log(`[${label}]`, JSON.stringify(data));
-    return data;
-  };
-
-  console.log('\n>>> Final snapshots <<<');
-  const hostSnap = await snap(hostPage, 'Host');
-  const clientSnaps = [];
-  for (const { name, page } of clientPages) {
-    clientSnaps.push({ name, snap: await snap(page, name) });
-  }
-
-  // Host + (clientCount - 1) survivors (Tester01 was kicked).
-  const expectedCount = clientCount; // host + remaining testers
-  const tester01 = clientSnaps.find((c) => c.name === 'Tester01');
-  const survivors = clientSnaps.filter((c) => c.name !== 'Tester01');
-
-  const tester01Left = tester01?.snap?.onHome === true && tester01?.snap?.inRoom === false;
-  const survivorsInRoom =
-    hostSnap?.inRoom && survivors.every((c) => c.snap?.inRoom);
-  const countMatches =
-    String(hostSnap?.playerCount) === String(expectedCount) &&
-    survivors.every((c) => String(c.snap?.playerCount) === String(expectedCount));
-
-  console.log(
-    `\nResult: tester01Left=${tester01Left} survivorsInRoom=${survivorsInRoom} playerCountMatches=${countMatches} expected=${expectedCount}`
-  );
-
-  console.log('\nDone. Ctrl+C to exit.');
-  await new Promise(() => {});
-}
+const config = {
+  baseUrl: (parsed.values.url ?? '').replace(/\/$/, ''),
+  roomArg: parsed.values.room,
+  count: parseInt(parsed.values.count, 10),
+  verboseCount: parseInt(parsed.values.verbose, 10),
+  voteProbability: parseFloat(parsed.values['vote-probability']),
+  staggerMs: parseInt(parsed.values.stagger, 10),
+  durationSec: parsed.values.duration ? parseInt(parsed.values.duration, 10) : null,
+  headless: parsed.values.headless !== 'false',
+  nameOverride: parsed.values.name,
+};
+
+// ---- Dispatch ---------------------------------------------------------
+
+const MODE_TO_MODULE = {
+  host: './e2e/modes/host.js',
+  swarm: './e2e/modes/swarm.js',
+  e2e: './e2e/modes/check.js',
+  check: './e2e/modes/check.js',
+  observe: './e2e/modes/observe.js',
+  transfer: './e2e/modes/transfer.js',
+  crash: './e2e/modes/crash.js',
+  kick: './e2e/modes/kick.js',
+  vote: './e2e/modes/vote.js',
+  refresh: './e2e/modes/refresh.js',
+  'kick-window': './e2e/modes/kick-window.js',
+  'late-joiner': './e2e/modes/late-joiner.js',
+  deadman: './e2e/modes/deadman.js',
+  'state-persist': './e2e/modes/state-persist.js',
+  disarm: './e2e/modes/disarm.js',
+  'join-ux': './e2e/modes/join-ux.js',
+  settings: './e2e/modes/settings.js',
+  'copy-toast': './e2e/modes/copy-toast.js',
+  'solo-leave': './e2e/modes/solo-leave.js',
+  'panel-ux': './e2e/modes/panel-ux.js',
+  all: './e2e/modes/all.js',
+};
 
 async function main() {
-  const browser = await puppeteer.launch({
-    headless,
-    args: ['--no-sandbox', '--disable-dev-shm-usage'],
-  });
+  // 'all' mode spawns sub-processes and doesn't need its own browser.
+  if (mode === 'all') {
+    const { run } = await import(MODE_TO_MODULE[mode]);
+    await run(config);
+    return;
+  }
 
+  const browser = await launchBrowser({ headless: config.headless });
   process.on('SIGINT', async () => {
     console.log('\nShutting down...');
     await browser.close().catch(() => {});
@@ -702,32 +238,11 @@ async function main() {
   });
 
   try {
-    switch (mode) {
-      case 'host':
-        await runHost(browser);
-        break;
-      case 'swarm':
-        await runSwarm(browser);
-        break;
-      case 'e2e':
-        await runE2E(browser);
-        break;
-      case 'observe':
-        await runObserve(browser);
-        break;
-      case 'transfer':
-        await runTransfer(browser);
-        break;
-      case 'crash':
-        await runCrash(browser);
-        break;
-      case 'kick':
-        await runKick(browser);
-        break;
-    }
+    const { run } = await import(MODE_TO_MODULE[mode]);
+    await run(browser, config);
   } finally {
-    // e2e / finite-duration host exits here; swarm / observe keep the
-    // promise pending and never reach this point until SIGINT.
+    // Modes that exit early (check) reach here; SIGINT-waiting modes
+    // (everything else) don't.
     await browser.close().catch(() => {});
   }
 }

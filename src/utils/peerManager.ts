@@ -67,7 +67,7 @@ const WELL_KNOWN_PROBE_TIMEOUT_MS = 2000;
 // destroying its peer. Upper bound — if every client acks immediately, we
 // proceed as soon as they all do. Covers cross-network RTT + a margin so
 // the SCTP queue drains before we tear the DataChannel down.
-const HOST_LEAVING_ACK_TIMEOUT_MS = 2000;
+const HOST_LEAVING_ACK_TIMEOUT_MS = 5000;
 // Lower-bound extra delay after the ACK wait completes. Gives the OS a
 // moment to flush the DataChannel send buffer even after SCTP acked —
 // belt-and-braces against tight races on flaky networks.
@@ -149,6 +149,18 @@ class PeerManager {
   // Guards against concurrent reconnect attempts (heartbeat-triggered vs
   // conn.close-triggered vs HOST_LEAVING handler).
   private reconnecting = false;
+  // When HOST_LEAVING arrives we save its nextHostId here as the
+  // authoritative successor for the upcoming migration. This covers the
+  // cross-network race where `conn.on('close')` beats the HOST_LEAVING
+  // data event: `onHostConnectionLost` flips `reconnecting=true`, so
+  // `handleHostLeaving` would early-return without applying the intended
+  // successor — and `handleHostDisconnect` would fall back to auto-
+  // election (oldest-non-host), possibly picking someone OTHER than the
+  // user's chosen successor. Any migration path consults this value
+  // before auto-electing. Cleared on consume and on every room join.
+  // `undefined` = "no HOST_LEAVING observed"; `null` = "room is closing
+  // with no successor". Do not conflate the two.
+  private authoritativeSuccessor: string | null | undefined = undefined;
   // Guards against infinite migration loops — if migration fails and we
   // re-enter, give up instead of looping forever.
   private migrationAttempted = false;
@@ -245,6 +257,7 @@ class PeerManager {
   async createRoom() {
     this.intentionalLeave = false;
     this.migrationAttempted = false;
+    this.authoritativeSuccessor = undefined;
     const { playerId, playerName } = usePokerStore.getState();
     const roomId = generateRoomId();
     const hostPeerId = `${PEER_PREFIX}${roomId}`;
@@ -376,6 +389,26 @@ class PeerManager {
         if (data?.type === 'STATE_UPDATE' && data.payload) {
           usePokerStore.getState().updateRoomState(data.payload);
           settle(() => resolve());
+          // Belt-and-braces self-promote: if the broadcast indicates we
+          // ARE the new host but we haven't flipped `isHost` yet, the
+          // primary HOST_LEAVING signal was either in-flight or got
+          // dropped cross-network. Jump to selfPromoteHost from here so
+          // our UI (already showing the crown because of state.hostId)
+          // matches our P2P role. Gated on `!isHost` so subsequent
+          // STATE_UPDATEs never re-trigger. See transferHost's eager
+          // `updateRoomState({hostId})` broadcast on the sending side.
+          const poststate = usePokerStore.getState();
+          if (
+            !this.isHost &&
+            poststate.roomId &&
+            data.payload.hostId &&
+            data.payload.hostId === poststate.playerId
+          ) {
+            console.log(
+              '[peerManager] STATE_UPDATE says I am host but isHost=false — self-promoting'
+            );
+            void this.selfPromoteHost(poststate.roomId);
+          }
         } else if (data?.type === 'HOST_LEAVING') {
           this.handleHostLeaving(data.payload.nextHostId);
         } else if (data?.type === 'KICKED') {
@@ -410,6 +443,7 @@ class PeerManager {
     this.intentionalLeave = false;
     this.migrationAttempted = false;
     this.reconnecting = false;
+    this.authoritativeSuccessor = undefined;
     return this.joinViaHost(`${PEER_PREFIX}${roomId}`);
   }
 
@@ -776,39 +810,43 @@ class PeerManager {
   private async handleHostLeaving(nextHostId: string | null) {
     console.log('[peerManager] received HOST_LEAVING, nextHostId=', nextHostId);
 
-    // The old host's peer teardown also fires conn.on('close') on every
-    // client, which would otherwise trigger a second migration path
-    // (`onHostConnectionLost` → probe → handleHostDisconnect) in parallel
-    // with us. Both paths call joinViaHost which closes this.hostConnection
-    // mid-operation, so one of them ends up with a dead connection and the
-    // client drops out of the room. Holding the `reconnecting` flag for the
-    // whole handler keeps onHostConnectionLost a no-op while we work.
+    // ALWAYS record the authoritative successor and ACK the old host,
+    // even if a reconnect is already running. `conn.on('close')` can
+    // beat the HOST_LEAVING data event on cross-network links; in that
+    // case we've already set reconnecting=true via onHostConnectionLost
+    // and handleHostDisconnect is about to auto-elect. We need its
+    // election to respect the user's chosen successor — `handleHostDisconnect`
+    // consults `this.authoritativeSuccessor` before falling back to the
+    // oldest-non-host rule. Bug: without this, a UI-chosen successor
+    // that isn't the oldest non-host could lose the crown to the auto-
+    // elected one, causing the designated player's UI to NOT get the
+    // host role (symptom: crown + Reveal/Reset buttons didn't move).
+    this.authoritativeSuccessor = nextHostId;
+    if (this.hostConnection && this.hostConnection.open) {
+      try {
+        this.hostConnection.send({ type: 'HOST_LEAVING_ACK' } as Message);
+      } catch (err) {
+        console.warn('[peerManager] HOST_LEAVING_ACK send failed', err);
+      }
+    }
+
     if (this.reconnecting) {
-      console.log('[peerManager] handleHostLeaving: reconnect already in flight, skipping');
+      console.log(
+        '[peerManager] handleHostLeaving: reconnect already in flight; saved nextHostId for handleHostDisconnect'
+      );
       return;
     }
     this.reconnecting = true;
     this.stopHeartbeatWatchdog();
 
     try {
-      // Send ACK back IMMEDIATELY so the departing host can tear down as
-      // soon as every client has acknowledged. Fire-and-forget — we don't
-      // block migration on whether the ACK actually leaves the queue; the
-      // departing side has its own timeout fallback.
-      if (this.hostConnection && this.hostConnection.open) {
-        try {
-          this.hostConnection.send({ type: 'HOST_LEAVING_ACK' } as Message);
-        } catch (err) {
-          console.warn('[peerManager] HOST_LEAVING_ACK send failed', err);
-        }
-      }
-
       const { playerId, roomId, players } = usePokerStore.getState();
       if (!roomId) return;
 
       usePokerStore.getState().setConnectionStatus('reconnecting');
 
       if (!nextHostId) {
+        this.authoritativeSuccessor = undefined;
         usePokerStore.getState().pushToast({
           message: i18n.t('toast.roomEmpty'),
           variant: 'info',
@@ -818,6 +856,7 @@ class PeerManager {
       }
 
       if (nextHostId === playerId) {
+        this.authoritativeSuccessor = undefined;
         await this.selfPromoteHost(roomId);
         return;
       }
@@ -825,6 +864,7 @@ class PeerManager {
       const successor = players[nextHostId];
       if (!successor) {
         console.warn('[peerManager] HOST_LEAVING: successor not in players map');
+        this.authoritativeSuccessor = undefined;
         usePokerStore.getState().leaveRoom();
         return;
       }
@@ -835,6 +875,7 @@ class PeerManager {
         variant: 'info',
       });
 
+      this.authoritativeSuccessor = undefined;
       await this.directConnectToSuccessor(successor.peerId, successor.name);
     } finally {
       this.reconnecting = false;
@@ -885,10 +926,35 @@ class PeerManager {
     }
     this.migrationAttempted = true;
 
-    const activePlayers = Object.values(players).sort((a, b) => a.joinedAt - b.joinedAt);
-    // Exclude the dropped host so we don't elect them again.
-    const candidates = activePlayers.filter((p) => p.id !== state.hostId);
-    const nextHost = candidates[0];
+    // If HOST_LEAVING already arrived (possibly after conn.close raced us
+    // into this path), prefer its authoritative nextHostId over auto-
+    // election. Handles the cross-network case where the user's chosen
+    // successor isn't the oldest non-host.
+    let nextHost = null;
+    if (this.authoritativeSuccessor !== undefined) {
+      const saved = this.authoritativeSuccessor;
+      this.authoritativeSuccessor = undefined;
+      if (saved === null) {
+        console.log('[peerManager] authoritative HOST_LEAVING: no successor — leaving room');
+        usePokerStore.getState().pushToast({
+          message: i18n.t('toast.roomEmpty'),
+          variant: 'info',
+        });
+        usePokerStore.getState().leaveRoom();
+        return;
+      }
+      nextHost = players[saved] ?? null;
+      if (nextHost) {
+        console.log('[peerManager] using authoritative successor from HOST_LEAVING:', nextHost.name);
+      }
+    }
+
+    if (!nextHost) {
+      const activePlayers = Object.values(players).sort((a, b) => a.joinedAt - b.joinedAt);
+      // Exclude the dropped host so we don't elect them again.
+      const candidates = activePlayers.filter((p) => p.id !== state.hostId);
+      nextHost = candidates[0] ?? null;
+    }
 
     if (!nextHost) {
       console.log('[peerManager] no candidates, leaving room');
@@ -1237,28 +1303,45 @@ class PeerManager {
       // timeout so we don't leave orphan listeners on the DataConnection.
       const waiter = new Promise<void>((resolve) => {
         let settled = false;
-        const onData = (raw: unknown) => {
-          const data = raw as Message;
-          if (data?.type === 'HOST_LEAVING_ACK') {
-            if (settled) return;
-            settled = true;
-            try {
-              conn.off('data', onData);
-            } catch {
-              /* ignore */
-            }
-            resolve();
-          }
-        };
-        conn.on('data', onData);
-        setTimeout(() => {
-          if (settled) return;
-          settled = true;
+        const cleanup = () => {
           try {
             conn.off('data', onData);
           } catch {
             /* ignore */
           }
+          try {
+            conn.off('close', onClose);
+          } catch {
+            /* ignore */
+          }
+        };
+        const onData = (raw: unknown) => {
+          const data = raw as Message;
+          if (data?.type === 'HOST_LEAVING_ACK') {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            resolve();
+          }
+        };
+        // The designated successor may self-promote via the eager
+        // STATE_UPDATE broadcast (see transferHost) and close their
+        // hostConnection BEFORE we send HOST_LEAVING. In that case
+        // they're already acting as host, so there's no ACK coming —
+        // treat close as an implicit acknowledgement to avoid waiting
+        // the full ACK_TIMEOUT for the one client who already knows.
+        const onClose = () => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          resolve();
+        };
+        conn.on('data', onData);
+        conn.on('close', onClose);
+        setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          cleanup();
           console.warn('[peerManager] HOST_LEAVING_ACK timeout for', conn.peer);
           resolve();
         }, HOST_LEAVING_ACK_TIMEOUT_MS);
@@ -1288,6 +1371,27 @@ class PeerManager {
     const newHost = state.players[newHostId];
     const roomId = state.roomId;
     if (!newHost || !roomId) return;
+
+    // Eagerly rotate `state.hostId` to the designated successor AND push
+    // a STATE_UPDATE broadcast BEFORE the HOST_LEAVING handshake. Two
+    // reasons:
+    //   1. Our own UI immediately reflects the hand-off — the crown and
+    //      the Reveal/Reset buttons move off us the moment we click the
+    //      make-host confirm, without waiting for us to reconnect to the
+    //      new host.
+    //   2. All clients that are still connected to us receive the
+    //      updated hostId through the existing broadcast channel, so
+    //      even if the downstream HOST_LEAVING packet is lost before
+    //      SCTP delivers it (cross-network worst case), their UI is
+    //      already correct. The new host's own STATE_UPDATE data
+    //      handler will also observe `hostId === my playerId` and
+    //      self-promote — see the joinViaHost data handler.
+    // NOTE: peerManager.isHost is still true at this point; we demote
+    // only after the ACK wait below. This is deliberate — the P2P layer
+    // must stay "hosting" until we're ready to tear down, even though
+    // the UI layer has already rotated.
+    usePokerStore.getState().updateRoomState({ hostId: newHostId });
+    this.broadcastState();
 
     // Announce successor to every client and WAIT until each has ack'd
     // (or the per-connection timeout fires). This is the critical fix
@@ -1376,6 +1480,8 @@ class PeerManager {
     this.intentionalLeave = true;
     this.reconnecting = false;
     this.migrationAttempted = false;
+    this.authoritativeSuccessor = undefined;
+    this.kickedUntil.clear();
     if (this.ghostCleanupTimer) {
       clearTimeout(this.ghostCleanupTimer);
       this.ghostCleanupTimer = null;

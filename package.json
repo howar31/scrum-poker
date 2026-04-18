@@ -15,7 +15,20 @@
     "e2e:observe": "node scripts/e2e.js --mode observe",
     "e2e:transfer": "node scripts/e2e.js --mode transfer",
     "e2e:crash": "node scripts/e2e.js --mode crash",
-    "e2e:kick": "node scripts/e2e.js --mode kick"
+    "e2e:kick": "node scripts/e2e.js --mode kick",
+    "e2e:vote": "node scripts/e2e.js --mode vote",
+    "e2e:refresh": "node scripts/e2e.js --mode refresh",
+    "e2e:kick-window": "node scripts/e2e.js --mode kick-window",
+    "e2e:late-joiner": "node scripts/e2e.js --mode late-joiner",
+    "e2e:deadman": "node scripts/e2e.js --mode deadman",
+    "e2e:state": "node scripts/e2e.js --mode state-persist",
+    "e2e:disarm": "node scripts/e2e.js --mode disarm",
+    "e2e:join-ux": "node scripts/e2e.js --mode join-ux",
+    "e2e:settings": "node scripts/e2e.js --mode settings",
+    "e2e:copy-toast": "node scripts/e2e.js --mode copy-toast",
+    "e2e:solo-leave": "node scripts/e2e.js --mode solo-leave",
+    "e2e:panel-ux": "node scripts/e2e.js --mode panel-ux",
+    "e2e:all": "node scripts/e2e.js --mode all"
   },
   "dependencies": {
     "clsx": "^2.1.1",

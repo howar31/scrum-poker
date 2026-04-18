@@ -53,43 +53,62 @@ npm run lint
 
 ### End-to-end browser automation
 
-A single Puppeteer script at `scripts/e2e.js` drives the app through real browsers for smoke-testing, load simulation, and regression catching on the P2P migration paths. It targets `data-slot` attributes on the rendered controls so it's robust against i18n text changes, CSS text-transforms, and icon-only buttons.
+A Puppeteer-based test harness (entry `scripts/e2e.js`, mode files in `scripts/e2e/modes/`, shared utilities in `scripts/e2e/helpers.js`) covers 20 modes — from smoke tests and load simulation to regression locks on every P2P race condition fixed so far. Everything targets `data-slot` attributes so i18n and CSS changes don't break tests.
+
+**Fastest way to run the whole suite:**
+
+```bash
+VITE_E2E=1 npm run dev     # in one shell
+npm run e2e:all            # in another; exits 0 iff every mode passes
+```
 
 #### Prerequisites
 
-- Either `npm run dev` (default — script targets `http://localhost:5173`) or pass `--url https://your-deployment/` to point at a deployed build.
+- Either `npm run dev` (or `VITE_E2E=1 npm run dev` for modes that introspect store state — see below) or pass `--url https://your-deployment/` to target a deployed build.
 - Puppeteer is already a devDependency; `npm install` is sufficient.
+- **`VITE_E2E=1`** on the dev server exposes `window.__POKER_STATE__` so helpers can read the zustand store directly. Production builds never ship this. Modes that rely on it: `vote`, `refresh`, `state-persist`, `deadman`, `settings`. Safe to always set it.
 
 #### Modes
 
-Every mode has an `e2e:<name>` npm shortcut. The full flag list is in `npm run e2e -- --help`. All modes accept `--url`, `--headless true|false`, and `--count <n>` where relevant.
+Every mode has an `e2e:<name>` npm shortcut. The full flag list is in `npm run e2e -- --help`.
 
 | Mode | Shortcut | Exits? | What it does | Passes when... |
 | --- | --- | --- | --- | --- |
-| `host` | `e2e:host` | No (SIGINT) | Creates a room, prints Room ID, keeps page open. `--duration <sec>` makes it finite. | Room ID printed to stdout. |
-| `swarm` | `e2e:swarm` | No (SIGINT) | Spawns `--count` clients into `--room`, each votes at `--vote-probability`. `--verbose N` forwards the full browser console from the first N clients. | Clients join; kill with Ctrl-C. |
-| `e2e` | `e2e:check` | **Yes (0/1)** | Host + N clients join, host's DOM is inspected; asserts every `TesterNN` name is visible. Suitable for CI. | Exit code 0. |
-| `observe` | `e2e:observe` | No (SIGINT) | Single silent client joins `--room` and forwards browser console + page errors. Debug helper. | Manual — watch the console. |
-| `transfer` | `e2e:transfer` | No (SIGINT) | Host + N clients, bot-driven graceful host transfer from Host → Tester01. Covers `HOST_LEAVING` + ACK + direct-connect + background well-known reclaim. | Final `Result:` line shows `allInRoom=true playerCountMatches=true`. |
-| `crash` | `e2e:crash` | No (SIGINT) | Host + N clients, then the host page is closed abruptly (no `HOST_LEAVING`). Exercises the unplanned-disconnect path: heartbeat watchdog → Option A probe → `handleHostDisconnect` → self-promote + direct/well-known reconnect. | Final `Result:` line shows `allInRoom=true playerCountMatches=true` for the survivors. |
-| `kick` | `e2e:kick` | No (SIGINT) | Host kicks Tester01 via Players panel, waits past the 5 s reject window. Catches "kicked player auto-rejoins" regressions. | Final `Result:` line shows `tester01Left=true survivorsInRoom=true playerCountMatches=true`. |
+| `host` | `e2e:host` | No (SIGINT) | Create room, stay alive. `--duration <sec>` makes it finite. | Room ID printed. |
+| `swarm` | `e2e:swarm` | No (SIGINT) | N random-voting clients into `--room`. `--verbose N` forwards console. | Kill with Ctrl-C. |
+| `e2e` | `e2e:check` | **Yes (0/1)** | Host + N clients; asserts every TesterNN is visible. | Exit code 0. |
+| `observe` | `e2e:observe` | No (SIGINT) | Single client + full console forwarding. | Manual. |
+| `transfer` | `e2e:transfer` | No (SIGINT) | Graceful host transfer (HOST_LEAVING + ACK + direct-connect + reclaim). | `allInRoom=true playerCountMatches=true`. |
+| `crash` | `e2e:crash` | No (SIGINT) | Host page abruptly closed. Drives heartbeat → probe → handleHostDisconnect → self-promote. | `allInRoom=true playerCountMatches=true`. |
+| `kick` | `e2e:kick` | No (SIGINT) | Host kicks Tester01; waits past 5 s reject window. | `tester01Left=true survivorsInRoom=true playerCountMatches=true`. |
+| `vote` | `e2e:vote` | No (SIGINT) | Full vote → reveal → reset cycle; asserts Statistics `average=4 min=3 max=5` (☕ excluded) and reset clears state. | `votesRecorded=true statsCorrect=true resetClears=true`. |
+| `refresh` | `e2e:refresh` | No (SIGINT) | Client reloads mid-session; asserts same playerId (no duplicate), documents vote-loss. | `sameCount=true noDuplicates=true voteLostAsExpected=true`. |
+| `state-persist` | `e2e:state` | No (SIGINT) | Votes + isRevealed survive host transfer. | `votesPreserved=true revealedPreserved=true statsStable=true`. |
+| `kick-window` | `e2e:kick-window` | No (SIGINT) | 5 s kicked-ID reject window blocks auto-reconnect, but manual re-join works afterwards. | `kickedLanded=true blockedWithinWindow=true rejoinAfterWindow=true`. |
+| `late-joiner` | `e2e:late-joiner` | No (SIGINT) | Fresh client joins during a host transfer. | `lateJoined=true allInRoom=true playerCountConverges=true`. |
+| `deadman` | `e2e:deadman` | No (SIGINT) | Transfer to non-oldest, kill successor mid-flight; rank-0 original host recovers. | `hostRecovered=true survivorsInRoom=true`. |
+| `disarm` | `e2e:disarm` | No (SIGINT) | Arm kick, wait > 3 s, assert `data-confirming` cleared and next click re-arms. | `autoDisarmed=true reArmsNotConfirms=true tester01Stays=true`. |
+| `join-ux` | `e2e:join-ux` | No (SIGINT) | Home URL routing, Room ID normalization (`ILO123` → `110123`), cancel works. | `createShownAtRoot=true joinShownWithRoom=true normalized=true cancelWorks=true`. |
+| `settings` | `e2e:settings` | No (SIGINT) | Theme / language / animations toggles + theme persistence across reload. | `themeFlips=true themePersists=true languageFlips=true animationsToggle=true`. |
+| `copy-toast` | `e2e:copy-toast` | No (SIGINT) | copy-room-id + copy-invite-link surface toasts; toasts auto-dismiss in 4.5 s. | `roomIdToast=true linkToast=true toastsAutoDismiss=true`. |
+| `solo-leave` | `e2e:solo-leave` | No (SIGINT) | Solo host leaves via menu (arm + confirm); URL `?room=` stripped. | `leftAfterConfirm=true backOnHome=true urlCleaned=true`. |
+| `panel-ux` | `e2e:panel-ux` | No (SIGINT) | Players panel closes via X, Escape, and backdrop click. | `xCloses=true escapeCloses=true backdropCloses=true`. |
+| `all` | `e2e:all` | **Yes (0/1)** | Runs every assertion mode as a child process, aggregates pass/fail. | Exit code 0. |
 
-A "`Result:`" line on the final output of `transfer` / `crash` / `kick` with all fields `=true` means the scenario passed; any `false` field indicates a regression. These modes don't set an exit code — the script stays alive for browser inspection — so `grep -q "allInRoom=true"` (or similar) is the CI-friendly wrapper. `e2e:check` is the only mode that exits with a status code automatically.
+Assertion-mode pass criterion: the final `Result: ...` line has every field `=true`. Any `=false` means a regression. `check` and `all` are the only modes with actual exit codes; for the others, grep stdout or use `e2e:all` to wrap them.
 
 #### Examples
 
 ```bash
-# CI-style assertion: create host + 5 clients, exit 0/1
+# Run the full suite (recommended in CI)
+VITE_E2E=1 npm run dev &
+npm run e2e:all
+
+# Single assertion modes
 npm run e2e:check -- --count 5
-
-# Drive a graceful host transfer with 3 clients, watch all migrate
+npm run e2e:vote
 npm run e2e:transfer -- --count 3
-
-# Simulate a host crash and verify survivors reunite
-npm run e2e:crash -- --count 3
-
-# Verify kicked player doesn't auto-rejoin
-npm run e2e:kick -- --count 3
+npm run e2e:deadman
 
 # Create a room on the deployed site and keep it alive
 npm run e2e:host -- --url https://lab.howar31.com/scrum-poker
@@ -97,10 +116,7 @@ npm run e2e:host -- --url https://lab.howar31.com/scrum-poker
 # Load-test: 10 random-voting clients into an existing room
 npm run e2e:swarm -- --url https://lab.howar31.com/scrum-poker --room ABC1234 --count 10
 
-# Same swarm but forward console from the first 2 clients for debugging
-npm run e2e:swarm -- --room ABC1234 --count 10 --verbose 2
-
-# Silent single-client debug helper with full console
+# Debugging a P2P bug: single client + full console forwarding
 npm run e2e:observe -- --room ABC1234
 ```
 
