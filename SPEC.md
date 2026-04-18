@@ -61,7 +61,7 @@ A purely frontend, serverless Peer-to-Peer (P2P) Scrum Poker application. It lev
 ### 7. Card Visual Effects (`src/components/Card.tsx`)
 
 - **Pointer tilt**: `useMotionValue` tracks pointer X/Y over the card; `useSpring`-smoothed `rotateX` / `rotateY` produce a ±14° 3D tilt that spring-returns to rest on mouse leave.
-- **Glass card back**: deep indigo base with a pointer-tracked specular highlight (`radial-gradient` whose centre follows pointer X/Y), a fixed top-left sheen, and a subtle bottom-edge reflection. No rainbow foil — the look is clean glass, not a trading-card hologram.
+- **Crystalline glass card back**: translucent blue gradient base (lighter top-left, cooler bottom-right) layered with a top crescent highlight, a diagonal bright streak, a thin secondary streak (faceted feel), a bottom inner glow, and a low-opacity pointer-tracked pin-point specular. Inset rim highlights (bright top/left, dark bottom/right) and a subtle outer edge complete the glass-edge illusion. The revealed front face picks up the same rim/sheen treatment so both sides read as glass, not as paper.
 - **Physical flip**: 0.9 s keyframe animation that lifts the card (y↑ + larger shadow) during the first quarter, rotates it around Y during the middle half, and places it back down during the last quarter — mimicking "pick up, flip, set down".
 - **Staggered reveal**: `revealIndex * 0.12s` delay so cards flip one after another at reveal time.
 - **Green pulse on reveal**: every card (not just others') gets a brief green `boxShadow` pulse post-flip, replacing the confusing isMe-asymmetric yellow ring.

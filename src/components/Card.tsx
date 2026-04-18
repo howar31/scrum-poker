@@ -68,11 +68,11 @@ export default function Card({ card, isRevealed, isMe, revealIndex = 0, size = '
     stiffness: 220,
     damping: 18,
   });
-  // Specular highlight position tracks the pointer so the glass reflection
-  // "moves with your eyes".
-  const specularX = useTransform(pointerX, [-0.5, 0.5], ['20%', '80%']);
-  const specularY = useTransform(pointerY, [-0.5, 0.5], ['20%', '80%']);
-  const specularBackground = useMotionTemplate`radial-gradient(circle at ${specularX} ${specularY}, rgba(255,255,255,0.55), rgba(255,255,255,0) 50%)`;
+  // Pin-point specular that tracks the pointer — subtle glint on a glass
+  // facet. Kept low-opacity so it reads as a hint of movement, not a blob.
+  const specularX = useTransform(pointerX, [-0.5, 0.5], ['30%', '70%']);
+  const specularY = useTransform(pointerY, [-0.5, 0.5], ['30%', '70%']);
+  const specularBackground = useMotionTemplate`radial-gradient(circle at ${specularX} ${specularY}, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0.08) 10%, rgba(255,255,255,0) 25%)`;
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!animationsEnabled) return;
@@ -178,17 +178,33 @@ export default function Card({ card, isRevealed, isMe, revealIndex = 0, size = '
             transition={{ duration: 1.2, delay: revealDelay + 0.5, times: [0, 0.4, 1] }}
           >
             <div
-              className={cn(
-                'w-full h-full rounded shadow-sm border flex items-center justify-center font-bold relative overflow-hidden',
-                'bg-white dark:bg-gray-800 border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-400'
-              )}
+              className="w-full h-full rounded-lg flex items-center justify-center font-bold relative overflow-hidden bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400"
+              style={{
+                // Glass rim: bright top-left, subtle dark bottom-right + outer edge
+                boxShadow: [
+                  'inset 0 1px 0 rgba(255,255,255,0.9)',
+                  'inset 1px 0 0 rgba(255,255,255,0.5)',
+                  'inset -1px 0 0 rgba(0,0,0,0.08)',
+                  'inset 0 -1px 0 rgba(0,0,0,0.12)',
+                  '0 0 0 1px rgba(147,197,253,0.5)',
+                  '0 2px 8px rgba(30,64,175,0.12)',
+                ].join(', '),
+              }}
             >
-              <span>{card}</span>
+              {/* Top-left diagonal sheen for glass feel */}
+              <div
+                className="absolute inset-0 pointer-events-none rounded-lg"
+                style={{
+                  background:
+                    'linear-gradient(145deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.1) 25%, transparent 45%)',
+                }}
+              />
+              <span className="relative z-10">{card}</span>
               {card === '☕' && <CoffeeSmoke />}
             </div>
           </motion.div>
 
-          {/* Back face: glass reflection (no rainbow foil) */}
+          {/* Back face: crystalline glass */}
           <div
             className={cn(
               'absolute inset-0 backface-hidden [transform:rotateY(180deg)] rounded-lg',
@@ -198,34 +214,60 @@ export default function Card({ card, isRevealed, isMe, revealIndex = 0, size = '
             <div
               className="relative w-full h-full rounded-lg overflow-hidden"
               style={{
-                background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #312e81 100%)',
-                boxShadow:
-                  'inset 0 1px 0 rgba(255,255,255,0.4), inset 0 -1px 0 rgba(255,255,255,0.08), 0 0 0 1px rgba(255,255,255,0.2)',
+                // Translucent blue glass: lighter top-left, cooler bottom-right
+                background:
+                  'linear-gradient(150deg, rgba(186,200,240,0.55) 0%, rgba(120,140,210,0.7) 30%, rgba(70,80,170,0.85) 70%, rgba(40,45,120,0.95) 100%)',
+                boxShadow: [
+                  'inset 0 1px 0 rgba(255,255,255,0.85)', // Top bright rim
+                  'inset 1px 0 0 rgba(255,255,255,0.4)', // Left bright rim
+                  'inset -1px 0 0 rgba(0,0,0,0.25)', // Right dark rim
+                  'inset 0 -1px 0 rgba(0,0,0,0.3)', // Bottom dark rim
+                  '0 0 0 1px rgba(255,255,255,0.25)', // Outer edge
+                ].join(', '),
               }}
             >
-              {/* Pointer-tracked specular highlight */}
+              {/* Top crescent — light catching the upper curve, classic glass */}
+              <div
+                className="absolute inset-0 pointer-events-none"
+                style={{
+                  background:
+                    'radial-gradient(ellipse 70% 35% at 50% -10%, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.1) 50%, transparent 75%)',
+                }}
+              />
+
+              {/* Diagonal bright streak — the characteristic glass shine band */}
+              <div
+                className="absolute inset-0 pointer-events-none"
+                style={{
+                  background:
+                    'linear-gradient(145deg, transparent 20%, rgba(255,255,255,0.22) 38%, rgba(255,255,255,0.05) 44%, transparent 52%)',
+                }}
+              />
+
+              {/* Thin secondary streak for faceted crystal feel */}
+              <div
+                className="absolute inset-0 pointer-events-none"
+                style={{
+                  background:
+                    'linear-gradient(125deg, transparent 55%, rgba(255,255,255,0.12) 66%, transparent 72%)',
+                }}
+              />
+
+              {/* Bottom inner glow — light pooling at the bottom edge */}
+              <div
+                className="absolute inset-x-0 bottom-0 h-1/2 pointer-events-none"
+                style={{
+                  background:
+                    'radial-gradient(ellipse 60% 40% at 50% 100%, rgba(120,160,255,0.18) 0%, transparent 70%)',
+                }}
+              />
+
+              {/* Pointer-tracked pin-point specular */}
               <motion.div
                 className="absolute inset-0 pointer-events-none"
                 style={{
                   backgroundImage: specularBackground,
                   mixBlendMode: 'screen',
-                }}
-              />
-
-              {/* Fixed top-left glass sheen (always-on reflection) */}
-              <div
-                className="absolute inset-0 pointer-events-none"
-                style={{
-                  background:
-                    'linear-gradient(135deg, rgba(255,255,255,0.32) 0%, rgba(255,255,255,0.05) 40%, transparent 55%)',
-                }}
-              />
-
-              {/* Bottom edge reflection for depth */}
-              <div
-                className="absolute inset-x-0 bottom-0 h-1/3 pointer-events-none"
-                style={{
-                  background: 'linear-gradient(to top, rgba(255,255,255,0.12), transparent)',
                 }}
               />
             </div>
