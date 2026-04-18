@@ -47,6 +47,18 @@
     "yourHand": "Your hand",
     "waitingReset": "Waiting for host to reset..."
   },
+  "players": {
+    "title": "Players",
+    "countLabel": "{{count}}",
+    "openPanel": "Open player list",
+    "close": "Close",
+    "voted": "Voted",
+    "notVoted": "Not voted",
+    "host": "Host",
+    "transferHost": "Make host",
+    "kick": "Kick",
+    "confirmHint": "Click again to confirm"
+  },
   "stats": {
     "voting": "Voting",
     "everyoneVoted": "Everyone has voted — ready to reveal.",

@@ -7,6 +7,7 @@ This application allows teams to estimate stories without requiring a backend se
 
 - **Serverless & P2P**: WebRTC (via PeerJS) for real-time communication between browsers. No server-side state.
 - **Table-style Layout**: All played cards are laid out on a felt table so everyone's vote is visible at a glance, even with 8+ players. A dedicated Statistics panel shows Average, Min, Max, Consensus badge, and vote distribution as soon as cards are revealed.
+- **Players Panel**: An on-demand drawer (right-side on desktop, bottom sheet on mobile) lists every player with vote status and host crown. Transfer host and kick live here with a two-click confirmation so you can't misfire on a quick tap.
 - **Rich Card Effects**: Pointer-tracked 3D tilt, glass-style card back with a pointer-following specular highlight, and a physical "pick up → flip → place down" reveal animation. Hand cards lift on hover; played cards lean at natural angles on the table.
 - **Readable Room IDs**: 7-character Crockford Base32 codes (no confusable characters like `0/O`, `1/L/I`, `U/V`) so they can be dictated verbally without errors.
 - **Mistake-proof Entry**: The Home page shows only one primary action at a time — Join when you arrive via an invite link, Create otherwise — so you can't accidentally click the wrong button.

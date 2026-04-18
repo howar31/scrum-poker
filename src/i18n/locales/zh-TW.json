@@ -47,6 +47,18 @@
     "yourHand": "你的手牌",
     "waitingReset": "等待 Host 重設..."
   },
+  "players": {
+    "title": "玩家",
+    "countLabel": "{{count}}",
+    "openPanel": "開啟玩家清單",
+    "close": "關閉",
+    "voted": "已投票",
+    "notVoted": "未投票",
+    "host": "Host",
+    "transferHost": "設為 Host",
+    "kick": "踢出",
+    "confirmHint": "再點一次確認"
+  },
   "stats": {
     "voting": "投票進度",
     "everyoneVoted": "所有人都投完了 — 可以揭牌。",

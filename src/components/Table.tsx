@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
-import { Crown, UserMinus } from 'lucide-react';
+import { Crown } from 'lucide-react';
 import { usePokerStore, type Player } from '../store/usePokerStore';
 import Card from './Card';
 
@@ -10,9 +10,6 @@ interface TableProps {
   isRevealed: boolean;
   currentPlayerId: string;
   hostId: string | null;
-  amIHost: boolean;
-  onMakeHost: (id: string) => void;
-  onKick: (id: string) => void;
 }
 
 // Deterministic per-player tilt + vertical offset, so every player's card
@@ -28,7 +25,7 @@ function tiltForPlayerId(id: string): { rotate: number; yOffset: number } {
   // Rotate: ±10° in ~1° increments (21 buckets).
   const rotate = (h % 21) - 10;
   // Vertical offset: 0–10 px so some cards sit slightly higher/lower.
-  const yOffset = ((h >>> 5) % 11);
+  const yOffset = (h >>> 5) % 11;
   return { rotate, yOffset };
 }
 
@@ -38,18 +35,12 @@ function PlayerSeat({
   isMe,
   isHost,
   revealIndex,
-  canModerate,
-  onMakeHost,
-  onKick,
 }: {
   player: Player;
   isRevealed: boolean;
   isMe: boolean;
   isHost: boolean;
   revealIndex: number;
-  canModerate: boolean;
-  onMakeHost: () => void;
-  onKick: () => void;
 }) {
   const { t } = useTranslation();
   const { animationsEnabled } = usePokerStore();
@@ -62,7 +53,7 @@ function PlayerSeat({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={animationsEnabled ? { opacity: 0, scale: 0.7, transition: { duration: 0.25 } } : undefined}
       transition={{ type: 'spring', stiffness: 280, damping: 24 }}
-      className="flex flex-col items-center gap-2 group relative"
+      className="flex flex-col items-center gap-2 relative"
     >
       <div
         className="relative"
@@ -94,38 +85,11 @@ function PlayerSeat({
           </span>
         )}
       </div>
-
-      {canModerate && !isMe && (
-        <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-2 right-0 flex gap-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-sm p-0.5">
-          <button
-            onClick={onMakeHost}
-            title={t('table.makeHost')}
-            className="p-1 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded"
-          >
-            <Crown className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={onKick}
-            title={t('table.kick')}
-            className="p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded"
-          >
-            <UserMinus className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
     </motion.div>
   );
 }
 
-export default function Table({
-  players,
-  isRevealed,
-  currentPlayerId,
-  hostId,
-  amIHost,
-  onMakeHost,
-  onKick,
-}: TableProps) {
+export default function Table({ players, isRevealed, currentPlayerId, hostId }: TableProps) {
   const { t } = useTranslation();
   return (
     <div className="relative bg-gradient-to-br from-emerald-800/90 via-emerald-900 to-green-950 dark:from-emerald-900 dark:via-emerald-950 dark:to-black rounded-3xl shadow-inner border-2 border-emerald-950/40 px-6 py-10 md:py-14 min-h-[20rem] overflow-hidden">
@@ -153,9 +117,6 @@ export default function Table({
                 isMe={player.id === currentPlayerId}
                 isHost={player.id === hostId}
                 revealIndex={index}
-                canModerate={amIHost}
-                onMakeHost={() => onMakeHost(player.id)}
-                onKick={() => onKick(player.id)}
               />
             ))}
           </AnimatePresence>
