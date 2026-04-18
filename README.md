@@ -1,28 +1,53 @@
 # Scrum Poker
 
-A Serverless P2P Scrum Poker web application built with React, Vite, TailwindCSS, and PeerJS.
-This application allows teams to estimate stories without requiring a backend server or database.
+**Serverless · No Database · Open Source** — A peer-to-peer scrum poker app that runs entirely in your browser. No backend, no signup, no tracking.
+
+🔗 **Live**: [lab.howar31.com/scrum-poker/](https://lab.howar31.com/scrum-poker/)
+
+Built with React, Vite, TailwindCSS, and PeerJS. State lives in the participants' browsers and evaporates when the last person leaves — there is no database to store it in.
+
+## Quick Start
+
+*For facilitators & participants — no engineering knowledge required.*
+
+Open the [live link](https://lab.howar31.com/scrum-poker/) in any modern browser (Chrome, Firefox, Safari, Edge). No account needed.
+
+**Create a room** (facilitator)
+1. Enter your name on the Home page and click **Create New Room**.
+2. Share the Room ID (7 characters, e.g. `ABC1234`) or the full invite link with your team — the "copy link" icon next to the Room ID does both at once.
+
+**Join a room** (participant)
+- Either click the invite link someone sent you, or paste the Room ID into the Home page and click **Join Room**.
+
+**During a round**
+- **Vote**: tap a card in the bottom hand rail. Tap the same card again to unselect.
+- **Reveal**: the host clicks **Reveal** when everyone's voted. The Statistics panel shows average / min / max / distribution; `?` and `☕` are excluded from the average.
+- **Reset**: the host clicks **Reset** to clear all votes for the next story.
+
+**Moderator actions** (host only — open the Players panel from the top right)
+- **Transfer host**: click the crown icon next to a player, then click again to confirm. The room keeps running during the handoff.
+- **Kick**: click the kick icon, then click again to confirm.
+
+**Leave**
+- Menu (top right) → **Leave room** → click again to confirm. If you were the host, the room automatically picks a new one.
+
+**Browser compatibility note**: if you use **Arc Browser**, the app will warn you on Home and advise not to take the Host role. See [Known Limitations](#known-limitations) below.
 
 ## Features
 
-- **Serverless & P2P**: WebRTC (via PeerJS) for real-time communication between browsers. No server-side state.
-- **Table-style Layout**: All played cards are laid out on a felt table so everyone's vote is visible at a glance, even with 8+ players. A dedicated Statistics panel shows Average, Min, Max, Consensus badge, and vote distribution as soon as cards are revealed.
-- **Players Panel**: An on-demand drawer (right-side on desktop, bottom sheet on mobile) lists every player with vote status and host crown. Transfer host and kick live here with a two-click confirmation so you can't misfire on a quick tap. Kicked users return to the Home screen with a toast and won't auto-reconnect back into the room.
-- **Rich Card Effects**: Pointer-tracked 3D tilt, crystalline glass-style card back with layered fixed highlights, and a physical "pick up → flip → place down" reveal animation. Hand cards lift on hover; played cards lean at natural angles on the table.
-- **Readable Room IDs**: 7-character Crockford Base32 codes (no confusable characters like `0/O`, `1/L/I`, `U/V`) so they can be dictated verbally without errors.
-- **Mistake-proof Entry**: The Home page shows only one primary action at a time — Join when you arrive via an invite link, Create otherwise — so you can't accidentally click the wrong button.
-- **Zero-Split-Brain Host Migration**: When the host leaves or crashes, exactly one client becomes the new host — guaranteed structurally, not by convention. The mechanism: host identity IS the PeerJS broker's well-known ID (`scrum-poker-{roomId}`), and the broker permits only one peer to hold that ID at a time. Clients race to open it; whoever succeeds is host, everyone else gets `unavailable-id` and becomes a follower. Every message carries a monotonic `epoch` so stale broadcasts can never overwrite fresh state. Graceful transfers settle in ~5–10 s; unplanned crashes in up to ~60 s depending on how fast the broker releases the crashed host's ID.
-- **Resilient Joins**: If a new joiner arrives while the room is switching hosts, the Join form turns into a cancellable retry with a spinner and a progress message that distinguishes "can't find this room yet" from "host isn't responding". The retry never pauses — after 30 s it surfaces a non-blocking banner explaining it's still trying, which you can dismiss or use to Give up. Walk away, come back, or bail out at any time.
-- **Rank-Based Deadman Fallback**: If the designated successor crashes mid-flip, a passive grace period expires after 10 s and non-electors unlock their own election attempts, staggered by join order. Rank 0 (typically the original host) usually wins; the room survives instead of evicting everyone. Broker arbitration still guarantees one host.
-- **Ghost Sweep**: After a migration, a 20 s sweep clears any players who didn't make it back (e.g., the crashed old host) so the player list stays accurate.
-- **Honest Connection Status**: A three-state dot in the header — green for live, yellow (pulsing) for reconnecting, red (pulsing) for disconnected. On desktop the status label renders inline next to the dot; on mobile it stays icon-only to save space, and tapping it pushes a toast with the full explanation. If the WebSocket to the PeerJS broker drops (tab backgrounded, heartbeat timeout), the app automatically calls `peer.reconnect()` behind the scenes and the dot flips back to green once re-registered.
-- **Persistent Identity**: Your player ID survives page reloads, so a refresh is recognised as a reconnect rather than a duplicate player.
-- **Toast Notifications**: Non-intrusive notifications for joins, leaves, reconnects, host changes, and connection errors — all auto-dismiss so stale messages don't linger after a successful reconnect.
-- **Arc Browser Warning**: Arc's default WebRTC privacy settings break P2P connections without a TURN server; the app detects Arc and displays actionable guidance on how to adjust the setting.
-- **Accessibility**: A "Reduce Motion" toggle disables every animation in one click.
-- **Theming**: Supports Dark and Light modes.
-- **Internationalization**: English and Traditional Chinese (繁體中文), switchable from the header. Auto-detects the browser language on first load and persists the choice.
-- **Responsive**: Fully responsive design for mobile and desktop.
+- **Zero-Split-Brain Host Migration.** When the host leaves or crashes, exactly one client becomes the new host — *structurally* guaranteed, not by convention. The PeerJS broker's one-peer-per-ID constraint is the single arbiter: clients race to open the room's well-known ID, the broker hands it to one winner, every other caller becomes a follower. Every message carries a monotonic `epoch` so stale broadcasts from a previous host can never overwrite fresh state. If the designated successor crashes mid-handoff, non-electors unlock a rank-staggered fallback (rank 0 = original host usually) so the room survives. Graceful transfers settle in ~5–10 s; dirty crashes up to ~60 s. A 20 s ghost-sweep after migration keeps the player list accurate when someone doesn't make it back. Full FSM + protocol in [`SPEC.md`](SPEC.md).
+- **Regression-Locked P2P Testing.** 24 Puppeteer e2e modes — every past P2P race condition has a dedicated test that reproduces it headless in CI: `split-brain` (5-client cross-network strand), `crash-mid-transfer`, `election-race`, `partition`, `deadman`, `kick-window`, `late-joiner`, and more. `npm run e2e:all` cross-checks the zustand store via a test-only hook and exits non-zero on any regression. See the [Modes table](#modes) below.
+- **Reconnect-aware Identity.** `playerId` persists across page reloads, so refreshing is a reconnect (same seat, same `joinedAt` rank for host-election ordering), not a duplicate join. An 8 s application-layer watchdog on top of a 2 s STATE heartbeat detects a dead host faster than WebRTC's native ICE timeout (15–30 s) while still tolerating brief network blips without evicting anyone. If the WebSocket to the PeerJS broker drops (tab backgrounded), the app auto-reconnects behind the scenes.
+- **Serverless & P2P.** WebRTC via PeerJS. No backend, no database, no signup. Room state lives in participants' browsers and evaporates when the last person leaves.
+- **Resilient Joins.** A new joiner arriving mid-migration gets a cancellable retry form with a spinner and a progress message that distinguishes "can't find this room yet" from "host isn't responding". After 30 s, a non-blocking banner offers Dismiss (keep retrying) or Give up. Walk away, come back, or bail out at any time.
+- **Honest Connection Status.** A three-state dot in the header — green live, yellow (pulsing) reconnecting, red (pulsing) disconnected. Desktop shows the label inline; mobile stays icon-only and a tap toasts the full explanation.
+- **Mistake-proof Entry.** The Home page shows only one primary action at a time — Join when you arrive via an invite link, Create otherwise — so you can't accidentally click the wrong button.
+- **Readable Room IDs.** 7-character Crockford Base32 (no confusable `0/O`, `1/L/I`, `U/V`) — dictable verbally. The input field normalises common mistypes (`I→1`, `L→1`, `O→0`) so voice-relayed IDs still work.
+- **Players Panel with Two-Step Moderator Actions.** A drawer (right-side desktop, bottom sheet mobile) lists every player with vote status and host crown. Transfer host and kick live here with a two-click arm-and-confirm (3 s auto-disarm) so you can't misfire on a quick tap. Kicked users return to Home and won't auto-reconnect.
+- **Table-style Layout + Live Statistics.** Every played card is laid out on a felt table so votes are visible at a glance, even with 8+ players. A Statistics panel shows Average, Min, Max, Consensus badge, and vote distribution the moment cards are revealed (`?` and `☕` excluded from the average).
+- **Rich Card Effects.** Pointer-tracked 3D tilt, crystalline glass-style card back, and a physical "pick up → flip → place down" reveal animation. Hand cards lift on hover; played cards lean at natural angles on the table. Honored by the "Reduce Motion" toggle.
+- **Arc Browser Warning.** Arc's WebRTC stack doesn't play well with other browsers; the app detects Arc and surfaces actionable guidance on Home (including the recommendation to let someone else be Host). See [Known Limitations](#known-limitations).
+- **i18n, theming, accessibility, responsive.** English + Traditional Chinese (auto-detected, persisted). Dark / Light theme. "Reduce Motion" kill-switch for animations. Fully responsive mobile + desktop.
 
 ## Development
 
@@ -125,7 +150,7 @@ npm run e2e:observe -- --room ABC1234
 
 ## Deployment
 
-This project is configured to automatically deploy to GitHub Pages when changes are pushed to the `main` branch, via GitHub Actions (`.github/workflows/deploy.yml`).
+The production instance is at [lab.howar31.com/scrum-poker/](https://lab.howar31.com/scrum-poker/). It's auto-deployed to GitHub Pages on every push to `main` via `.github/workflows/deploy.yml`. To host your own copy: fork the repo, update the `homepage` in `package.json`, and enable GitHub Pages in the repo settings.
 
 ## Known Limitations
 

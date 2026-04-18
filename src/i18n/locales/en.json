@@ -46,7 +46,7 @@
     "invitedSubtitle": "Joining room <b>{{roomId}}</b>",
     "notThisRoom": "Not this room? Create a new one instead →",
     "startTitle": "Start a session",
-    "startSubtitle": "Create a new room and share the link with your team.",
+    "startSubtitle": "Create a room and share the link — no signup, no database, data stays between browsers.",
     "fallbackToggle": "Or join an existing room with a Room ID",
     "failedCreate": "Failed to create room",
     "failedJoin": "Failed to join room",
@@ -120,6 +120,13 @@
     "reclaimingDetail": "Setting up the new host connection...",
     "waiting": "Switching host",
     "waitingDetail": "Waiting for the new host to be ready..."
+  },
+  "footer": {
+    "serverless": "Serverless",
+    "noDatabase": "No Database",
+    "openSource": "Open Source",
+    "license": "MIT License",
+    "githubLabel": "View source on GitHub"
   },
   "errors": {
     "connectionTimeout": "Connection to host timed out (20s). Check the Room ID, confirm the host is online, or verify your network.",

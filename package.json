@@ -3,6 +3,27 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "description": "Serverless, no-database peer-to-peer Scrum Poker web app. No backend, no signup — pure WebRTC between browsers.",
+  "license": "MIT",
+  "homepage": "https://lab.howar31.com/scrum-poker/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/howar31/scrum-poker.git"
+  },
+  "bugs": {
+    "url": "https://github.com/howar31/scrum-poker/issues"
+  },
+  "keywords": [
+    "scrum",
+    "poker",
+    "estimation",
+    "agile",
+    "p2p",
+    "webrtc",
+    "serverless",
+    "react",
+    "typescript"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

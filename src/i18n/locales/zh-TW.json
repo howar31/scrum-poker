@@ -46,7 +46,7 @@
     "invitedSubtitle": "即將加入房間 <b>{{roomId}}</b>",
     "notThisRoom": "不是這個房間?改建立新房間 →",
     "startTitle": "開始一場估算",
-    "startSubtitle": "建立新房間並把連結分享給團隊。",
+    "startSubtitle": "建立新房間,分享連結給團隊 — 不用註冊、沒有資料庫,資料僅存在參與者的瀏覽器之間。",
     "fallbackToggle": "或使用房間 ID 加入現有房間",
     "failedCreate": "建立房間失敗",
     "failedJoin": "加入房間失敗",
@@ -119,6 +119,13 @@
     "reclaimingDetail": "正在設定新的 Host 連線...",
     "waiting": "切換 Host 中",
     "waitingDetail": "等待新 Host 準備完成..."
+  },
+  "footer": {
+    "serverless": "無伺服器",
+    "noDatabase": "無資料庫",
+    "openSource": "開源",
+    "license": "MIT License",
+    "githubLabel": "在 GitHub 上查看原始碼"
   },
   "errors": {
     "connectionTimeout": "連線至 Host 逾時 (20 秒)。請確認房間 ID、Host 是否在線,或檢查你的網路。",

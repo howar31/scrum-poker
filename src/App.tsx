@@ -4,6 +4,7 @@ import { usePokerStore } from './store/usePokerStore';
 import Home from './components/Home';
 import Room from './components/Room';
 import Toast from './components/Toast';
+import Footer from './components/Footer';
 import MigrationOverlay from './components/MigrationOverlay';
 import { peerManager } from './utils/peerManager';
 import { Sparkles, Moon, Sun, Link2, LogOut, Languages, MoreVertical, Users } from 'lucide-react';
@@ -298,6 +299,7 @@ function App() {
       <main className="flex-1 flex flex-col p-4 md:p-8 max-w-6xl mx-auto w-full">
         {roomId ? <Room /> : <Home />}
       </main>
+      <Footer />
       <MigrationOverlay />
       <Toast />
     </div>

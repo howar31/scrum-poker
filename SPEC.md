@@ -281,6 +281,7 @@ When adding a new button or input that exercises app state, give it a `data-slot
   - `Toast.tsx` — top-right toast container, driven by the store
   - `MigrationOverlay.tsx` — blocking overlay shown while the room is reclaiming / awaiting a new host
   - `PlayersPanel.tsx` — on-demand right-drawer / bottom-sheet with player list + host controls (transfer / kick) using two-step confirmation
+  - `Footer.tsx` — single-line footer with Serverless · No Database · Open Source badges on the left, GitHub repo link (text: `Howar31`) + MIT License label on the right. Rendered under `<main>` in `App.tsx`
 - `src/i18n/` — `react-i18next` setup and locale files (`locales/en.json`, `locales/zh-TW.json`).
 - `src/store/usePokerStore.ts` — Zustand state, persistence, and toast queue.
 - `src/utils/`
