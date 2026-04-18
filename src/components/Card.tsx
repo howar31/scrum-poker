@@ -1,4 +1,4 @@
-import { motion, useMotionTemplate, useMotionValue, useSpring, useTransform } from 'framer-motion';
+import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { usePokerStore, type CardValue } from '../store/usePokerStore';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -68,11 +68,6 @@ export default function Card({ card, isRevealed, isMe, revealIndex = 0, size = '
     stiffness: 220,
     damping: 18,
   });
-  // Pin-point specular that tracks the pointer — subtle glint on a glass
-  // facet. Kept low-opacity so it reads as a hint of movement, not a blob.
-  const specularX = useTransform(pointerX, [-0.5, 0.5], ['30%', '70%']);
-  const specularY = useTransform(pointerY, [-0.5, 0.5], ['30%', '70%']);
-  const specularBackground = useMotionTemplate`radial-gradient(circle at ${specularX} ${specularY}, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0.08) 10%, rgba(255,255,255,0) 25%)`;
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!animationsEnabled) return;
@@ -259,15 +254,6 @@ export default function Card({ card, isRevealed, isMe, revealIndex = 0, size = '
                 style={{
                   background:
                     'radial-gradient(ellipse 60% 40% at 50% 100%, rgba(120,160,255,0.18) 0%, transparent 70%)',
-                }}
-              />
-
-              {/* Pointer-tracked pin-point specular */}
-              <motion.div
-                className="absolute inset-0 pointer-events-none"
-                style={{
-                  backgroundImage: specularBackground,
-                  mixBlendMode: 'screen',
                 }}
               />
             </div>
