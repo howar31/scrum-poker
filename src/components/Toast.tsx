@@ -59,7 +59,7 @@ export default function ToastContainer() {
   const toasts = usePokerStore((s) => s.toasts);
 
   return (
-    <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+    <div className="fixed top-20 right-4 z-50 flex flex-col gap-2 pointer-events-none">
       <div className="pointer-events-auto flex flex-col gap-2">
         <AnimatePresence initial={false}>
           {toasts.map((t) => (
