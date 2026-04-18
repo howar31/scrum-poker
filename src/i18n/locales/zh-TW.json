@@ -98,7 +98,7 @@
   },
   "arc": {
     "title": "偵測到 Arc 瀏覽器",
-    "description": "Arc 的隱私設定可能會阻擋 WebRTC 連線。如果無法建立或加入房間,請開啟 <code>arc://flags</code>,搜尋 <em>\"Anonymize local IPs exposed to WebRTC\"</em>,設定為 <strong>Disabled</strong>,然後重啟 Arc。Chrome、Firefox、Safari 則不需要任何設定。"
+    "description": "Arc 的 WebRTC 行為和其他瀏覽器不同。<strong>建議你不要當 Host(不要拿皇冠)</strong> — Arc 當 Host 時,其他 Chrome / Firefox 使用者在換 Host 時可能連不上。若要建立房間,請改用 Chrome、Firefox 或 Safari。若你只是加入房間,開啟 <code>arc://flags</code>,搜尋 <em>\"Anonymize local IPs exposed to WebRTC\"</em>,設為 <strong>Disabled</strong> 並重啟 Arc 可減少(但無法完全消除)連線問題。"
   },
   "toast": {
     "connectionLost": "連線中斷,正在重試 ({{attempt}}/{{max}})...",
@@ -122,7 +122,7 @@
   },
   "errors": {
     "connectionTimeout": "連線至 Host 逾時 (20 秒)。請確認房間 ID、Host 是否在線,或檢查你的網路。",
-    "arcHint": " (偵測到 Arc:請開啟 arc://flags,把「Anonymize local IPs exposed to WebRTC」設為 Disabled 並重啟 Arc。)",
+    "arcHint": " (偵測到 Arc:即使關閉 arc://flags 的「Anonymize local IPs exposed to WebRTC」,Arc 仍可能和 Chrome 無法建立 WebRTC 連線;建議改用 Chrome、Firefox 或 Safari,或至少不要當 Host。)",
     "closedBeforeJoining": "Host 在加入前關閉了連線。",
     "peerInitFailed": "PeerJS 初始化失敗",
     "peerError": "連線錯誤",

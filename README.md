@@ -129,4 +129,5 @@ This project is configured to automatically deploy to GitHub Pages when changes 
 
 ## Known Limitations
 
-- **No TURN server.** Peers behind symmetric NAT, certain corporate firewalls, or browsers with aggressive WebRTC privacy settings (notably **Arc Browser** in its default configuration) may fail to connect. Arc users should disable `arc://flags` → "Anonymize local IPs exposed to WebRTC", or switch to Chrome, Firefox, or Safari.
+- **No TURN server.** Peers behind symmetric NAT, certain corporate firewalls blocking UDP, or browsers with aggressive WebRTC privacy settings may fail to connect.
+- **Arc Browser as Host is broken in practice.** Even with `arc://flags` → "Anonymize local IPs exposed to WebRTC" disabled, Arc's WebRTC stack intermittently fails to complete ICE with Chrome peers. If an Arc user is Host, Chrome clients may be unable to reconnect during a host migration and end up back on Home. The app shows an in-app warning to Arc users advising them **not to take the Host role** (not to take the crown). If you're creating rooms, use Chrome, Firefox, or Safari. Arc as a non-host follower generally works.

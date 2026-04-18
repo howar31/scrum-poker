@@ -82,6 +82,15 @@ const KICK_MESSAGE_FLUSH_MS = 200;
 // swept as a ghost.
 const GHOST_CLEANUP_DELAY_MS = 20000;
 
+// How long the host waits for an incoming DataConnection's ICE to reach
+// `open`. If not by then, the RTCPeerConnection resources are released.
+// Necessary because Arc + Chrome pairs can leave ICE stuck in `checking`
+// indefinitely (Arc's mDNS anonymisation + no TURN fallback); without a
+// bounded cleanup, every failed retry piles another half-open RTCPeerConnection
+// onto the host. Set generously: 20 s covers normal broker latency +
+// multiple ICE candidate retries on a sluggish network.
+const INCOMING_OPEN_TIMEOUT_MS = 20000;
+
 interface JoinRetryHandle {
   /** Cancels any pending peer.connect and stops retries. */
   cancel: () => void;
@@ -644,7 +653,26 @@ class PeerManager {
       return;
     }
 
+    // Bounded wait for ICE to reach `open`. If the peer pair can't complete
+    // ICE (Arc + Chrome with no TURN is the common case), close the conn
+    // so we don't accumulate half-open RTCPeerConnection objects across
+    // the client's retries.
+    const openTimeout = setTimeout(() => {
+      if (!conn.open) {
+        console.warn(
+          '[peerManager] incoming ICE never opened, dropping',
+          conn.peer
+        );
+        try {
+          conn.close();
+        } catch {
+          /* ignore */
+        }
+      }
+    }, INCOMING_OPEN_TIMEOUT_MS);
+
     const setupIncoming = () => {
+      clearTimeout(openTimeout);
       console.log('[peerManager] incoming open, storing + broadcasting to', conn.peer);
       this.connections.set(conn.peer, conn);
       this.broadcastState();
@@ -675,6 +703,7 @@ class PeerManager {
     });
 
     conn.on('close', () => {
+      clearTimeout(openTimeout);
       console.warn('[peerManager] incoming closed', conn.peer);
       this.connections.delete(conn.peer);
       const state = usePokerStore.getState();
@@ -692,6 +721,7 @@ class PeerManager {
     });
 
     conn.on('error', (err) => {
+      clearTimeout(openTimeout);
       console.error('[peerManager] incoming error', conn.peer, err);
       this.connections.delete(conn.peer);
     });
