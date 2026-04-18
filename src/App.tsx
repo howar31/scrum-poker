@@ -42,6 +42,19 @@ function App() {
     window.history.replaceState({}, '', url.toString());
   }, [roomId]);
 
+  // Prevent accidental refresh / tab close while inside a room. Modern
+  // browsers show their own "Leave site?" dialog — the custom string is
+  // ignored but returnValue must be set for the prompt to appear.
+  useEffect(() => {
+    if (!roomId) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [roomId]);
+
   // Centralised close so outside-click, Escape, and the leave confirmation
   // all go through the same path that also disarms the leave-confirm state.
   const closeMenu = () => {

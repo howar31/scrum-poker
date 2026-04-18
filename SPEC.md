@@ -37,6 +37,7 @@ A purely frontend, serverless Peer-to-Peer (P2P) Scrum Poker application. It lev
 - **Host migration (fallback)**: Only if all reconnect attempts fail does the Peer perform migration. Remaining players are sorted by `joinedAt`; the oldest non-host player promotes itself to Host. Others connect to the new Host via `joinHost(nextHost.peerId)`. Toasts announce the switch.
 - **Manual transfer**: The current Host may transfer host privileges to another player via `TRANSFER_HOST` action. The Host demotes itself and reconnects to the new Host.
 - **Intentional leave**: `peerManager.leave()` (invoked from the UI's Leave Room button) cancels any pending reconnect and tears everything down. Internal `destroy()` (called during re-initialisation) does *not* touch the intentional-leave flag, so reconnect flows survive peer re-creation.
+- **Unload guard**: while `roomId` is set, `App.tsx` installs a `beforeunload` listener that calls `preventDefault()` + sets `returnValue`, so refresh / tab-close / window-close triggers the browser's native "Leave site?" prompt. The listener is only attached in-room, so it doesn't nag users on the Home screen. Custom messages are ignored by modern browsers; only the prompt behaviour matters.
 
 ### 4. Reconnection Identity
 
