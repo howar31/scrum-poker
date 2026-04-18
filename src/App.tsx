@@ -6,7 +6,7 @@ import Room from './components/Room';
 import Toast from './components/Toast';
 import MigrationOverlay from './components/MigrationOverlay';
 import { peerManager } from './utils/peerManager';
-import { Sparkles, Moon, Sun, Link2, LogOut, Languages, MoreVertical } from 'lucide-react';
+import { Sparkles, Moon, Sun, Link2, LogOut, Languages, MoreVertical, Users } from 'lucide-react';
 
 function App() {
   const { t, i18n } = useTranslation();
@@ -18,7 +18,11 @@ function App() {
     animationsEnabled,
     setAnimationsEnabled,
     pushToast,
+    players,
+    setPlayersPanelOpen,
   } = usePokerStore();
+
+  const playerCount = Object.keys(players).length;
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmingLeave, setConfirmingLeave] = useState(false);
@@ -163,21 +167,41 @@ function App() {
                           : 'warning',
                   })
                 }
-                className={`inline-block w-2.5 h-2.5 rounded-full ml-1 transition ${
-                  connectionStatus === 'connected'
-                    ? 'bg-green-500'
-                    : connectionStatus === 'reconnecting'
-                      ? 'bg-amber-400 animate-pulse'
-                      : 'bg-red-500 animate-pulse'
-                }`}
+                className="inline-flex items-center gap-1.5 ml-1 transition"
                 title={`${t(`app.status.${connectionStatus}`)} — ${t(`app.statusDetail.${connectionStatus}`)}`}
                 aria-label={t(`app.status.${connectionStatus}`)}
-              />
+              >
+                <span
+                  className={`inline-block w-2.5 h-2.5 rounded-full ${
+                    connectionStatus === 'connected'
+                      ? 'bg-green-500'
+                      : connectionStatus === 'reconnecting'
+                        ? 'bg-amber-400 animate-pulse'
+                        : 'bg-red-500 animate-pulse'
+                  }`}
+                />
+                <span className="hidden md:inline text-xs text-gray-600 dark:text-gray-300">
+                  {t(`app.status.${connectionStatus}`)}
+                </span>
+              </button>
             </div>
           )}
         </div>
 
         <div className="flex gap-1 items-center flex-shrink-0">
+          {roomId && (
+            <button
+              data-slot="players-pill"
+              onClick={() => setPlayersPanelOpen(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-sm font-medium transition"
+              aria-label={t('players.openPanel')}
+              title={t('players.openPanel')}
+            >
+              <Users className="w-4 h-4" />
+              <span className="hidden sm:inline">{t('players.title')}</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">{playerCount}</span>
+            </button>
+          )}
           <div ref={menuRef} className="relative">
             <button
               data-slot="menu-trigger"

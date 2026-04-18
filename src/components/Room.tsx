@@ -1,7 +1,6 @@
-import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
-import { RotateCcw, Eye, Users } from 'lucide-react';
+import { RotateCcw, Eye } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { usePokerStore, type CardValue } from '../store/usePokerStore';
@@ -65,8 +64,8 @@ function HandCard({
 
 export default function Room() {
   const { t } = useTranslation();
-  const { hostId, playerId, players, isRevealed } = usePokerStore();
-  const [playersOpen, setPlayersOpen] = useState(false);
+  const { hostId, playerId, players, isRevealed, playersPanelOpen, setPlayersPanelOpen } =
+    usePokerStore();
 
   const amIHost = hostId === playerId;
   const myPlayer = players[playerId];
@@ -90,22 +89,6 @@ export default function Room() {
       {/* Main: Table on left, Statistics on right (lg) */}
       <div className="flex flex-col lg:flex-row gap-6 flex-1 min-h-0">
         <div className="flex-1 flex flex-col gap-4 min-w-0">
-          <div className="flex items-center justify-start">
-            <button
-              data-slot="players-pill"
-              onClick={() => setPlayersOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-sm font-medium transition"
-              aria-label={t('players.openPanel')}
-              title={t('players.openPanel')}
-            >
-              <Users className="w-4 h-4" />
-              <span>{t('players.title')}</span>
-              <span className="text-xs text-gray-500 dark:text-gray-400">
-                {allPlayers.length}
-              </span>
-            </button>
-          </div>
-
           <Table
             players={allPlayers}
             isRevealed={isRevealed}
@@ -143,8 +126,8 @@ export default function Room() {
       </div>
 
       <PlayersPanel
-        open={playersOpen}
-        onClose={() => setPlayersOpen(false)}
+        open={playersPanelOpen}
+        onClose={() => setPlayersPanelOpen(false)}
         players={allPlayers}
         hostId={hostId}
         currentPlayerId={playerId}

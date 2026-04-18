@@ -42,6 +42,7 @@ interface PokerState extends RoomState {
   error: string | null;
   toasts: Toast[];
   migrationPhase: MigrationPhase;
+  playersPanelOpen: boolean;
 
   // Actions
   setPlayerId: (id: string) => void;
@@ -53,6 +54,7 @@ interface PokerState extends RoomState {
   pushToast: (toast: Omit<Toast, 'id'>) => void;
   dismissToast: (id: string) => void;
   setMigrationPhase: (phase: MigrationPhase) => void;
+  setPlayersPanelOpen: (open: boolean) => void;
 
   // Room Actions
   updateRoomState: (state: Partial<RoomState>) => void;
@@ -77,6 +79,7 @@ export const usePokerStore = create<PokerState>()(
       error: null,
       toasts: [],
       migrationPhase: 'idle',
+      playersPanelOpen: false,
 
       setPlayerId: (id) => set({ playerId: id }),
       setPlayerName: (name) => set({ playerName: name }),
@@ -91,6 +94,7 @@ export const usePokerStore = create<PokerState>()(
       dismissToast: (id) =>
         set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
       setMigrationPhase: (phase) => set({ migrationPhase: phase }),
+      setPlayersPanelOpen: (open) => set({ playersPanelOpen: open }),
 
       updateRoomState: (newState) => set((state) => ({ ...state, ...newState })),
       leaveRoom: () =>
@@ -101,6 +105,7 @@ export const usePokerStore = create<PokerState>()(
           isRevealed: false,
           connectionStatus: 'disconnected',
           migrationPhase: 'idle',
+          playersPanelOpen: false,
         }),
     }),
     {
