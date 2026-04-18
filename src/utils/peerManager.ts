@@ -585,75 +585,73 @@ class PeerManager {
     usePokerStore.getState().leaveRoom();
   }
 
-  private transferHost(newHostId: string) {
+  // Manual host transfer (Host clicks "Make host" on another player).
+  // Reuses the HOST_LEAVING flow so the new host claims `scrum-poker-{roomId}`
+  // and other clients pick them up via their normal reconnect loop. The
+  // difference from a leave is that the old host, after releasing the peer,
+  // rejoins as a client instead of exiting the room.
+  private async transferHost(newHostId: string) {
     const state = usePokerStore.getState();
     const newHost = state.players[newHostId];
-    if (!newHost) return;
+    const roomId = state.roomId;
+    if (!newHost || !roomId) return;
 
-    usePokerStore.getState().updateRoomState({ hostId: newHostId });
-    this.broadcastState();
-
-    this.isHost = false;
-
-    setTimeout(() => {
-      this.connections.forEach((conn) => conn.close());
-      this.connections.clear();
-      this.joinHost(newHost.peerId);
-    }, 500);
-  }
-
-  async joinHost(hostPeerId: string) {
-    if (!this.peer || this.peer.disconnected) await this.init();
-    if (!this.peer) return;
-
-    this.isHost = false;
-
-    const conn = this.peer.connect(hostPeerId, { serialization: 'json' });
-    this.hostConnection = conn;
-
-    const setupConnection = () => {
-      console.log('[peerManager] joinHost: connected to new host', hostPeerId);
-      usePokerStore.getState().setConnected(true);
-      this.reconnectAttempt = 0;
-
-      const { playerId, playerName } = usePokerStore.getState();
-      this.sendAction({
-        type: 'JOIN',
-        payload: { id: playerId, name: playerName, peerId: this.peer!.id },
-      });
+    // Announce the successor to every client BEFORE destroying. Same message
+    // as graceful leave — receiver logic (reclaim / wait) is identical.
+    const msg: Message = {
+      type: 'HOST_LEAVING',
+      payload: { nextHostId: newHostId },
     };
-
-    conn.on('iceStateChanged', (state) => {
-      console.log('[peerManager] joinHost ICE state =', state);
+    this.connections.forEach((conn) => {
+      if (conn.open) conn.send(msg);
     });
 
-    conn.on('data', (raw) => {
-      const data = raw as Message;
-      if (data?.type === 'STATE_UPDATE' && data.payload) {
-        usePokerStore.getState().updateRoomState(data.payload);
-      } else if (data?.type === 'HOST_LEAVING') {
-        this.handleHostLeaving(data.payload.nextHostId);
+    // Let the data channel flush before we tear the peer down.
+    await new Promise((r) => setTimeout(r, 50));
+    this.destroy();
+    this.isHost = false;
+
+    // Show the waiting overlay while the new host claims the well-known ID,
+    // then rejoin as a client ourselves.
+    usePokerStore.getState().setMigrationPhase('waiting');
+    usePokerStore.getState().pushToast({
+      message: i18n.t('toast.hostLeftSwitching', { name: newHost.name }),
+      variant: 'info',
+    });
+
+    // Retry joinRoom with the same backoff used for reclaim — the new host
+    // needs a moment to take over `scrum-poker-{roomId}` before we can
+    // connect to it.
+    for (let i = 0; i < RECLAIM_DELAYS_MS.length; i++) {
+      if (RECLAIM_DELAYS_MS[i] > 0) {
+        await new Promise((r) => setTimeout(r, RECLAIM_DELAYS_MS[i]));
       }
-    });
+      try {
+        await this.joinRoom(roomId);
+        return; // back in as client
+      } catch (err) {
+        console.warn(
+          `[peerManager] rejoin-after-transfer attempt ${i + 1}/${RECLAIM_DELAYS_MS.length} failed:`,
+          err
+        );
+      }
+    }
 
-    conn.on('close', () => {
-      console.warn('[peerManager] joinHost connection closed');
-      this.onHostConnectionLost();
+    // Couldn't rejoin — surface and bail out.
+    console.error('[peerManager] failed to rejoin after transferring host');
+    usePokerStore.getState().pushToast({
+      message: i18n.t('toast.reclaimFailed'),
+      variant: 'error',
     });
-
-    conn.on('error', (err) => {
-      console.error('[peerManager] joinHost conn error:', err);
-    });
-
-    if (conn.open) setupConnection();
-    else conn.on('open', setupConnection);
+    usePokerStore.getState().setMigrationPhase('idle');
+    usePokerStore.getState().leaveRoom();
   }
 
   // Teardown used internally (e.g. before reinitializing a peer inside init()).
   // Must NOT reset isHost: createRoom sets isHost=true BEFORE awaiting init(),
   // and resetting it here would undo that race fix and cause the host to
   // reject every incoming connection. Role transitions are the caller's
-  // responsibility (createRoom/joinRoom/joinHost set their own role).
+  // responsibility (createRoom/joinRoom/reclaimHostIdentity set their own role).
   destroy() {
     if (this.peer) {
       this.peer.destroy();
