@@ -20,7 +20,9 @@ function App() {
   } = usePokerStore();
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const [confirmingLeave, setConfirmingLeave] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (theme === 'dark') {
@@ -40,15 +42,26 @@ function App() {
     window.history.replaceState({}, '', url.toString());
   }, [roomId]);
 
+  // Centralised close so outside-click, Escape, and the leave confirmation
+  // all go through the same path that also disarms the leave-confirm state.
+  const closeMenu = () => {
+    setMenuOpen(false);
+    setConfirmingLeave(false);
+    if (confirmTimerRef.current) {
+      clearTimeout(confirmTimerRef.current);
+      confirmTimerRef.current = null;
+    }
+  };
+
   useEffect(() => {
     if (!menuOpen) return;
     const onDown = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
+        closeMenu();
       }
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMenuOpen(false);
+      if (e.key === 'Escape') closeMenu();
     };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
@@ -71,6 +84,18 @@ function App() {
   };
 
   const handleLeave = () => {
+    if (confirmTimerRef.current) {
+      clearTimeout(confirmTimerRef.current);
+      confirmTimerRef.current = null;
+    }
+    if (!confirmingLeave) {
+      // First click: arm confirmation. Auto-cancel after 3s of inaction so
+      // the dangerous state doesn't stay primed indefinitely.
+      setConfirmingLeave(true);
+      confirmTimerRef.current = setTimeout(() => setConfirmingLeave(false), 3000);
+      return;
+    }
+    closeMenu();
     peerManager.leave();
     usePokerStore.getState().leaveRoom();
   };
@@ -119,21 +144,9 @@ function App() {
         </div>
 
         <div className="flex gap-1 items-center flex-shrink-0">
-          {roomId && (
-            <button
-              onClick={handleLeave}
-              className="flex items-center gap-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 px-2.5 sm:px-3 py-2 rounded-lg transition font-medium text-sm"
-              title={t('app.leaveRoom')}
-              aria-label={t('app.leaveRoom')}
-            >
-              <LogOut className="w-4 h-4" />
-              <span className="hidden sm:inline">{t('app.leave')}</span>
-            </button>
-          )}
-
           <div ref={menuRef} className="relative">
             <button
-              onClick={() => setMenuOpen((v) => !v)}
+              onClick={() => (menuOpen ? closeMenu() : setMenuOpen(true))}
               className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition"
               title={t('app.menu')}
               aria-label={t('app.menu')}
@@ -189,6 +202,29 @@ function App() {
                     {theme === 'dark' ? t('app.dark') : t('app.light')}
                   </span>
                 </button>
+
+                {roomId && (
+                  <>
+                    <div className="my-1 border-t border-gray-200 dark:border-gray-700" />
+                    <button
+                      role="menuitem"
+                      onClick={handleLeave}
+                      className={`w-full flex items-center justify-between px-3 py-2 text-sm font-medium transition ${
+                        confirmingLeave
+                          ? 'bg-red-500 text-white hover:bg-red-600'
+                          : 'text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <LogOut className="w-4 h-4" />
+                        {t('app.leaveRoom')}
+                      </span>
+                      {confirmingLeave && (
+                        <span className="text-xs opacity-90">{t('app.leaveConfirm')}</span>
+                      )}
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </div>
