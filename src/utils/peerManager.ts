@@ -83,6 +83,13 @@ class PeerManager {
       });
 
       this.peer.on('disconnected', () => {
+        // Intentional teardown (leave / transferHost). peer.reconnect()
+        // here would keep the old peer ID alive on the broker and block
+        // the successor from reclaiming it during migration.
+        if (this.intentionalLeave) {
+          console.warn('[peerManager] peer disconnected (intentional, skipping reconnect)');
+          return;
+        }
         // Broker WebSocket dropped. Existing DataConnections survive, but
         // no new ones can be created until we re-register. UI goes yellow
         // and PeerJS's built-in reconnect retries the broker with the same
@@ -682,8 +689,12 @@ class PeerManager {
       if (conn.open) conn.send(msg);
     });
 
-    // Let the data channel flush before we tear the peer down.
+    // Let the data channel flush before we tear the peer down. Flag this
+    // as intentional so peer.on('disconnected') doesn't fire its auto-
+    // reconnect (which would hold the broker's peer-ID slot and block the
+    // successor from reclaiming it). Cleared when we re-enter via joinRoom.
     await new Promise((r) => setTimeout(r, 50));
+    this.intentionalLeave = true;
     this.destroy();
     this.isHost = false;
 
@@ -730,6 +741,12 @@ class PeerManager {
   // responsibility (createRoom/joinRoom/reclaimHostIdentity set their own role).
   destroy() {
     if (this.peer) {
+      // Drop our event subscriptions BEFORE tearing the peer down.
+      // Otherwise peer.destroy() emits 'disconnected' / 'close' while we
+      // still have handlers attached, and peer.reconnect() there would
+      // keep the old peer ID alive on the broker — blocking any
+      // successor from reclaiming it during migration.
+      this.peer.removeAllListeners();
       this.peer.destroy();
       this.peer = null;
     }

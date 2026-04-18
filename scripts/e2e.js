@@ -32,6 +32,8 @@ Modes:
   swarm     Spawn N clients that join an existing --room and randomly vote.
   e2e       Create a host + spawn N clients, assert host sees all of them, exit.
   observe   Single silent client that joins --room and forwards console logs.
+  transfer  host + N clients (default 2) + bot-driven host transfer from host to
+            Tester01, all verbose. Diagnostic-only; exits after observation.
 
 Flags:
   --url <url>                   Base app URL (default: http://localhost:5173)
@@ -89,7 +91,7 @@ const durationSec = parsed.values.duration ? parseInt(parsed.values.duration, 10
 const headless = parsed.values.headless !== 'false';
 const nameOverride = parsed.values.name;
 
-if (!mode || !['host', 'swarm', 'e2e', 'observe'].includes(mode)) {
+if (!mode || !['host', 'swarm', 'e2e', 'observe', 'transfer'].includes(mode)) {
   console.error('Error: missing or invalid --mode. Run with --help for options.');
   process.exit(1);
 }
@@ -110,11 +112,6 @@ async function openPage(browser, { isolated }) {
 async function fillName(page, name) {
   await page.waitForSelector('[data-slot="home-name"]', { timeout: 15000 });
   await page.type('[data-slot="home-name"]', name);
-}
-
-async function fillRoomId(page, roomId) {
-  await page.waitForSelector('[data-slot="home-room-id"]', { timeout: 15000 });
-  await page.type('[data-slot="home-room-id"]', roomId);
 }
 
 async function clickSlot(page, slot) {
@@ -305,6 +302,104 @@ async function runObserve(browser) {
 
 // ---- Entry point ------------------------------------------------------
 
+// Host creates a room, N clients join, then the host drives a two-click
+// transfer to the first Tester. Everything runs verbose so the console
+// timeline shows HOST_LEAVING broadcast → reclaim attempts on the new
+// host → waiting + scheduleReconnect on other clients → final state.
+async function runTransfer(browser) {
+  const clientCount = count || 2;
+  console.log(`Transfer scenario: 1 host + ${clientCount} clients at ${baseUrl}`);
+
+  // Host (default context so its console mirrors a real user's browser).
+  const hostPage = await openPage(browser, { isolated: false });
+  hostPage.on('console', (msg) => console.log('[Host]', msg.text().slice(0, 250)));
+  hostPage.on('pageerror', (err) => console.log('[Host] pageerror:', err.message));
+
+  await hostPage.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+  await fillName(hostPage, 'Host');
+  await clickSlot(hostPage, 'home-create');
+  await waitForRoomRender(hostPage);
+  const roomId = await getRoomIdFromUrl(hostPage);
+  console.log(`Host created room ${roomId}\n`);
+
+  // Clients — isolated so playerIds don't collide.
+  const joinUrl = `${baseUrl}/?room=${roomId}`;
+  for (let i = 0; i < clientCount; i++) {
+    const name = `Tester${String(i + 1).padStart(2, '0')}`;
+    await spawnSwarmClient(browser, name, joinUrl, { verbose: true });
+    await delay(1500);
+  }
+
+  console.log('\nLetting JOINs settle for 5 s...');
+  await delay(5000);
+
+  // Host triggers transfer on Tester01. Open players panel → find
+  // Tester01's row → click make-host twice (arm + confirm).
+  console.log('\n>>> Host clicking Players pill <<<');
+  await clickSlot(hostPage, 'players-pill');
+  await delay(600);
+
+  console.log('>>> Host clicking make-host on Tester01 (1/2: arm) <<<');
+  const tester01Id = await hostPage.evaluate(() => {
+    const row = Array.from(document.querySelectorAll('[data-slot="player-row"]')).find(
+      (el) => el.textContent?.includes('Tester01')
+    );
+    return row?.getAttribute('data-player-id') ?? null;
+  });
+  if (!tester01Id) {
+    console.log('❌ Could not find Tester01 in player list');
+    return;
+  }
+  console.log(`Tester01 playerId = ${tester01Id}`);
+
+  const clickMakeHost = () =>
+    hostPage.evaluate((pid) => {
+      const btn = document.querySelector(
+        `[data-slot="player-make-host"][data-player-id="${pid}"]`
+      );
+      if (btn instanceof HTMLElement) {
+        btn.click();
+        return true;
+      }
+      return false;
+    }, tester01Id);
+
+  const armed = await clickMakeHost();
+  console.log(armed ? 'Armed OK' : '❌ Could not arm');
+  await delay(500);
+
+  console.log('>>> Host clicking make-host on Tester01 (2/2: confirm) <<<');
+  const confirmed = await clickMakeHost();
+  console.log(confirmed ? 'Confirmed OK — transfer triggered' : '❌ Could not confirm');
+
+  console.log('\nObserving for 20 s...');
+  await delay(20000);
+
+  // Post-mortem snapshot from each page.
+  const snapshotAll = async () => {
+    const snap = async (page, label) => {
+      const data = await page
+        .evaluate(() => {
+          const status = document
+            .querySelector('[data-slot="connection-status"]')
+            ?.getAttribute('data-status');
+          const roomBanner = document
+            .querySelector('[data-slot="copy-room-id"]')
+            ?.textContent?.trim();
+          const inRoom = !!document.querySelector('[data-slot="hand-card"]');
+          return { status, roomBanner, inRoom };
+        })
+        .catch(() => null);
+      console.log(`[${label}]`, JSON.stringify(data));
+    };
+    await snap(hostPage, 'Host (ex-host)');
+  };
+  await snapshotAll();
+
+  console.log('\nDone. Ctrl+C to exit — leaving browsers open for inspection.');
+  await new Promise(() => {});
+}
+
 async function main() {
   const browser = await puppeteer.launch({
     headless,
@@ -330,6 +425,9 @@ async function main() {
         break;
       case 'observe':
         await runObserve(browser);
+        break;
+      case 'transfer':
+        await runTransfer(browser);
         break;
     }
   } finally {
