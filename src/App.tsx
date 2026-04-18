@@ -128,7 +128,7 @@ function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[var(--color-background-light)] dark:bg-[var(--color-background-dark)] text-[var(--color-text-light)] dark:text-[var(--color-text-dark)] transition-colors duration-200">
-      <header className="px-4 py-3 flex justify-between items-center gap-3 border-b border-gray-200 dark:border-gray-800">
+      <header className="sticky top-0 z-30 bg-[var(--color-background-light)] dark:bg-[var(--color-background-dark)] px-4 py-3 flex justify-between items-center gap-3 border-b border-gray-200 dark:border-gray-800">
         <div className="flex items-center gap-2 md:gap-4 min-w-0 flex-1">
           <h1 className="text-xl md:text-2xl font-bold bg-gradient-to-r from-blue-500 to-indigo-600 bg-clip-text text-transparent flex-shrink-0">
             {t('app.title')}
