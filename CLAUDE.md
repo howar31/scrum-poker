@@ -28,6 +28,7 @@ See `SPEC.md` for detailed architecture, state management, and P2P implementatio
 - Destructive / hard-to-undo actions (Leave, host transfer, kick) use a two-step arm-and-confirm pattern with a 3 s auto-disarm. Never a one-click action.
 - Moderator controls (transfer host, kick) live in `PlayersPanel` only — never on Table hover.
 - Every actionable control carries `data-slot="<component>-<action>"` for stable e2e automation. Add one when you add a new button / input. Full index: `SPEC.md` → "data-slot convention".
+- **When adding a new e2e mode**, update ALL of these together in the same commit so future agents can find it: (1) `scripts/e2e.js` — add the mode function + register in the `main()` switch + whitelist the mode name; (2) `scripts/e2e.js` — extend the `HELP_TEXT` block with the mode's npm shortcut, exit behavior, and pass criterion; (3) `package.json` — add an `e2e:<name>` script entry; (4) `README.md` — add a row to the mode table in the "End-to-end browser automation" section and an example; (5) `SPEC.md` → "End-to-End Harness" → add a bullet under "Modes" with explicit **Exits?** and **Asserts:** fields.
 
 ## P2P Rules
 
