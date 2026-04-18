@@ -47,9 +47,14 @@ const PING_TIMEOUT_MS = 8000;
 // Option A — single quick well-known-ID probe before migrating. Covers short
 // network blips so we don't kick off an unnecessary migration.
 const WELL_KNOWN_PROBE_TIMEOUT_MS = 2000;
-// Direct-connect retries when clients reconnect to the new host via its
-// original (random) peer ID. Total ≈ 10 s.
-const DIRECT_CONNECT_DELAYS_MS = [0, 500, 1500, 3000, 5000];
+// Total budget for reconnecting during a migration. Inside this window we
+// alternate direct-connect to the successor's original peer ID and connect
+// via the well-known ID (in case the successor has already opened the
+// secondary well-known peer in the background) — whichever responds first
+// wins. Longer than the Option A probe because ICE can take a moment to
+// settle and the successor may briefly reject connections while flipping
+// `isHost = true`.
+const MIGRATION_RECONNECT_BUDGET_MS = 20000;
 
 interface JoinRetryHandle {
   /** Cancels any pending peer.connect and stops retries. */
@@ -64,7 +69,11 @@ export type JoinRetryProgress =
   | { kind: 'timeout' };
 
 interface JoinRetryOptions {
-  maxDurationMs: number;
+  /** Optional hard cap. Omit for "keep trying until cancel or success" — the
+   * UI now runs the timeout prompt on a side-timer instead of gating the
+   * retry loop, so the user can leave the give-up prompt on screen without
+   * pausing the background retry. */
+  maxDurationMs?: number;
   onProgress?: (progress: JoinRetryProgress, elapsedMs: number) => void;
 }
 
@@ -369,7 +378,7 @@ class PeerManager {
       let attempt = 0;
       while (!cancelled) {
         const elapsed = Date.now() - start;
-        if (elapsed >= opts.maxDurationMs) {
+        if (opts.maxDurationMs !== undefined && elapsed >= opts.maxDurationMs) {
           const e = new Error('join window exceeded');
           (e as Error & { type?: string }).type = 'window-exceeded';
           throw e;
@@ -657,41 +666,57 @@ class PeerManager {
   private async handleHostLeaving(nextHostId: string | null) {
     console.log('[peerManager] received HOST_LEAVING, nextHostId=', nextHostId);
 
+    // The old host's peer teardown also fires conn.on('close') on every
+    // client, which would otherwise trigger a second migration path
+    // (`onHostConnectionLost` → probe → handleHostDisconnect) in parallel
+    // with us. Both paths call joinViaHost which closes this.hostConnection
+    // mid-operation, so one of them ends up with a dead connection and the
+    // client drops out of the room. Holding the `reconnecting` flag for the
+    // whole handler keeps onHostConnectionLost a no-op while we work.
+    if (this.reconnecting) {
+      console.log('[peerManager] handleHostLeaving: reconnect already in flight, skipping');
+      return;
+    }
+    this.reconnecting = true;
     this.stopHeartbeatWatchdog();
 
-    const { playerId, roomId, players } = usePokerStore.getState();
-    if (!roomId) return;
+    try {
+      const { playerId, roomId, players } = usePokerStore.getState();
+      if (!roomId) return;
 
-    usePokerStore.getState().setConnectionStatus('reconnecting');
+      usePokerStore.getState().setConnectionStatus('reconnecting');
 
-    if (!nextHostId) {
+      if (!nextHostId) {
+        usePokerStore.getState().pushToast({
+          message: i18n.t('toast.roomEmpty'),
+          variant: 'info',
+        });
+        usePokerStore.getState().leaveRoom();
+        return;
+      }
+
+      if (nextHostId === playerId) {
+        await this.selfPromoteHost(roomId);
+        return;
+      }
+
+      const successor = players[nextHostId];
+      if (!successor) {
+        console.warn('[peerManager] HOST_LEAVING: successor not in players map');
+        usePokerStore.getState().leaveRoom();
+        return;
+      }
+
+      usePokerStore.getState().setMigrationPhase('waiting');
       usePokerStore.getState().pushToast({
-        message: i18n.t('toast.roomEmpty'),
+        message: i18n.t('toast.hostLeftSwitching', { name: successor.name }),
         variant: 'info',
       });
-      usePokerStore.getState().leaveRoom();
-      return;
+
+      await this.directConnectToSuccessor(successor.peerId, successor.name);
+    } finally {
+      this.reconnecting = false;
     }
-
-    if (nextHostId === playerId) {
-      await this.selfPromoteHost(roomId);
-      return;
-    }
-
-    const successor = players[nextHostId];
-    if (!successor) {
-      console.warn('[peerManager] HOST_LEAVING: successor not in players map');
-      usePokerStore.getState().leaveRoom();
-      return;
-    }
-
-    usePokerStore.getState().setMigrationPhase('waiting');
-    usePokerStore.getState().pushToast({
-      message: i18n.t('toast.hostLeftSwitching', { name: successor.name }),
-      variant: 'info',
-    });
-
-    await this.directConnectToSuccessor(successor.peerId, successor.name);
   }
 
   // Unplanned disconnect migration: elect the earliest-joined non-host player
@@ -752,24 +777,41 @@ class PeerManager {
   }
 
   private async directConnectToSuccessor(successorPeerId: string, successorName: string) {
-    for (let i = 0; i < DIRECT_CONNECT_DELAYS_MS.length; i++) {
-      if (DIRECT_CONNECT_DELAYS_MS[i] > 0) {
-        await new Promise((r) => setTimeout(r, DIRECT_CONNECT_DELAYS_MS[i]));
-      }
+    const roomId = usePokerStore.getState().roomId;
+    const wellKnownPeerId = roomId ? `${PEER_PREFIX}${roomId}` : null;
+    const start = Date.now();
+
+    // Alternate direct-connect vs well-known so whichever channel opens
+    // first wins: direct-connect works as soon as the successor flips
+    // isHost=true; well-known works once their background reclaim lands.
+    // The successor may briefly reject while still a client, so repeated
+    // attempts are normal — don't give up after a handful.
+    for (let attempt = 0; ; attempt++) {
+      const elapsed = Date.now() - start;
+      if (elapsed >= MIGRATION_RECONNECT_BUDGET_MS) break;
+
+      const delay = attempt === 0 ? 0 : Math.min(500 + attempt * 250, 2000);
+      if (delay > 0) await new Promise((r) => setTimeout(r, delay));
+      if (!usePokerStore.getState().roomId) return; // user left mid-migration
+
+      const useWellKnown = attempt % 2 === 1 && wellKnownPeerId;
+      const target = useWellKnown ? wellKnownPeerId : successorPeerId;
+      const label = useWellKnown ? 'well-known' : 'direct';
+
       try {
-        await this.joinViaHost(successorPeerId, { timeoutMs: 3000 });
-        console.log('[peerManager] direct-connect to successor succeeded');
+        await this.joinViaHost(target!, { timeoutMs: 3000 });
+        console.log(`[peerManager] migration reconnect succeeded via ${label}`);
         this.migrationAttempted = false;
         return;
       } catch (err) {
         console.warn(
-          `[peerManager] direct-connect attempt ${i + 1}/${DIRECT_CONNECT_DELAYS_MS.length} failed:`,
+          `[peerManager] migration attempt ${attempt + 1} (${label}) failed:`,
           err
         );
       }
     }
 
-    console.error('[peerManager] could not direct-connect to successor, leaving room');
+    console.error('[peerManager] could not reconnect to successor after budget, leaving room');
     usePokerStore.getState().pushToast({
       message: i18n.t('toast.failedToConnectHost', { name: successorName }),
       variant: 'error',

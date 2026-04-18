@@ -322,11 +322,15 @@ async function runTransfer(browser) {
   const roomId = await getRoomIdFromUrl(hostPage);
   console.log(`Host created room ${roomId}\n`);
 
-  // Clients — isolated so playerIds don't collide.
+  // Clients — isolated so playerIds don't collide. Keep page handles so
+  // we can snapshot each one post-transfer to verify nobody got kicked
+  // out during migration.
   const joinUrl = `${baseUrl}/?room=${roomId}`;
+  const clientPages = [];
   for (let i = 0; i < clientCount; i++) {
     const name = `Tester${String(i + 1).padStart(2, '0')}`;
-    await spawnSwarmClient(browser, name, joinUrl, { verbose: true });
+    const page = await spawnSwarmClient(browser, name, joinUrl, { verbose: true });
+    clientPages.push({ name, page });
     await delay(1500);
   }
 
@@ -375,26 +379,47 @@ async function runTransfer(browser) {
   console.log('\nObserving for 20 s...');
   await delay(20000);
 
-  // Post-mortem snapshot from each page.
-  const snapshotAll = async () => {
-    const snap = async (page, label) => {
-      const data = await page
-        .evaluate(() => {
-          const status = document
-            .querySelector('[data-slot="connection-status"]')
-            ?.getAttribute('data-status');
-          const roomBanner = document
-            .querySelector('[data-slot="copy-room-id"]')
-            ?.textContent?.trim();
-          const inRoom = !!document.querySelector('[data-slot="hand-card"]');
-          return { status, roomBanner, inRoom };
-        })
-        .catch(() => null);
-      console.log(`[${label}]`, JSON.stringify(data));
-    };
-    await snap(hostPage, 'Host (ex-host)');
+  // Post-mortem snapshot from every page so we can tell at a glance
+  // whether anyone was dropped by the migration. Also asserts the player
+  // count in the new host's view matches the spawned total.
+  const snap = async (page, label) => {
+    const data = await page
+      .evaluate(() => {
+        const status = document
+          .querySelector('[data-slot="connection-status"]')
+          ?.getAttribute('data-status');
+        const roomBanner = document
+          .querySelector('[data-slot="copy-room-id"]')
+          ?.textContent?.trim();
+        const inRoom = !!document.querySelector('[data-slot="hand-card"]');
+        // Players pill shows the total count as its trailing text node.
+        const pillText = document
+          .querySelector('[data-slot="players-pill"]')
+          ?.textContent?.trim();
+        const playerCount = pillText ? (pillText.match(/\d+/)?.[0] ?? null) : null;
+        return { status, roomBanner, inRoom, playerCount };
+      })
+      .catch(() => null);
+    console.log(`[${label}]`, JSON.stringify(data));
+    return data;
   };
-  await snapshotAll();
+
+  console.log('\n>>> Final snapshots <<<');
+  const hostSnap = await snap(hostPage, 'Host (ex-host)');
+  const clientSnaps = [];
+  for (const { name, page } of clientPages) {
+    clientSnaps.push({ name, snap: await snap(page, name) });
+  }
+
+  const expectedCount = clientCount + 1; // host + clients
+  const allInRoom =
+    hostSnap?.inRoom && clientSnaps.every((c) => c.snap?.inRoom);
+  const countMatches = clientSnaps.every(
+    (c) => String(c.snap?.playerCount) === String(expectedCount)
+  );
+  console.log(
+    `\nResult: allInRoom=${allInRoom} playerCountMatches=${countMatches} expected=${expectedCount}`
+  );
 
   console.log('\nDone. Ctrl+C to exit — leaving browsers open for inspection.');
   await new Promise(() => {});

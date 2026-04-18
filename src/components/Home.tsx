@@ -1,16 +1,17 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
-import { ChevronDown, Plus, LogIn, Loader2, X } from 'lucide-react';
+import { ChevronDown, Plus, LogIn, Loader2, X, AlertCircle } from 'lucide-react';
 import { usePokerStore } from '../store/usePokerStore';
 import { peerManager, type JoinRetryProgress } from '../utils/peerManager';
 import { normalizeRoomId } from '../utils/roomId';
 import ArcBrowserWarning from './ArcBrowserWarning';
 
-// Initial window before offering a "keep trying?" prompt. 30 s covers most
-// broker releases; the prompt adds another 30 s on demand, totalling enough
-// to outlast PeerJS broker alive_timeout (~60 s).
-const INITIAL_JOIN_WINDOW_MS = 30_000;
-const EXTEND_JOIN_WINDOW_MS = 30_000;
+// How long we wait before surfacing the "still haven't reached it" banner.
+// The retry loop itself never pauses — it keeps hammering the broker in the
+// background until it succeeds or the user clicks Give up. This prompt is a
+// non-blocking UX hint so the user knows things are taking longer than
+// usual and can bail out.
+const LONG_WAIT_PROMPT_MS = 30_000;
 
 // Read ?room= on initial render so we can branch the UI. Lazy-init so we
 // don't need a useEffect and don't hit the react-hooks/set-state-in-effect
@@ -85,8 +86,12 @@ function CreateForm({ playerName, onNameChange }: { playerName: string; onNameCh
 
 type JoinUiState =
   | { kind: 'idle' }
-  | { kind: 'joining'; roomId: string; progress: JoinRetryProgress }
-  | { kind: 'prompt-continue'; roomId: string };
+  | {
+      kind: 'joining';
+      roomId: string;
+      progress: JoinRetryProgress;
+      longWait: boolean;
+    };
 
 function JoinForm({
   playerName,
@@ -101,11 +106,29 @@ function JoinForm({
   const [roomInput, setRoomInput] = useState(initialRoomId);
   const [uiState, setUiState] = useState<JoinUiState>({ kind: 'idle' });
   const cancelRef = useRef<(() => void) | null>(null);
+  const longWaitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const runJoin = (roomId: string, windowMs: number) => {
-    setUiState({ kind: 'joining', roomId, progress: { kind: 'connecting' } });
+  // Clean up timers / cancel any in-flight retry when the form unmounts.
+  useEffect(() => {
+    return () => {
+      if (longWaitTimerRef.current) clearTimeout(longWaitTimerRef.current);
+      // Do NOT auto-cancel here: a successful join unmounts us via the
+      // store transition, and cancelling would destroy the just-connected
+      // peer. Cancellation only happens via the Give up button.
+    };
+  }, []);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const roomId = normalizeRoomId(roomInput);
+    if (!playerName.trim() || !roomId || uiState.kind !== 'idle') return;
+
+    setUiState({ kind: 'joining', roomId, progress: { kind: 'connecting' }, longWait: false });
+
+    // Retry loop runs without a hard window — keeps trying until success or
+    // Give up. The long-wait banner is a separate side-effect that appears
+    // after LONG_WAIT_PROMPT_MS without interrupting the retry.
     const handle = peerManager.joinRoomWithRetry(roomId, {
-      maxDurationMs: windowMs,
       onProgress: (progress) => {
         setUiState((prev) =>
           prev.kind === 'joining' ? { ...prev, progress } : prev
@@ -113,21 +136,30 @@ function JoinForm({
       },
     });
     cancelRef.current = handle.cancel;
+
+    longWaitTimerRef.current = setTimeout(() => {
+      longWaitTimerRef.current = null;
+      setUiState((prev) => (prev.kind === 'joining' ? { ...prev, longWait: true } : prev));
+    }, LONG_WAIT_PROMPT_MS);
+
     handle.promise.then(
       () => {
-        // Success — room state is set in the store, <App> will swap to <Room>.
-        // Reset local UI so a remount after leave doesn't freeze on "joining".
+        // Success — <App> swaps Home for Room when store.roomId updates.
         cancelRef.current = null;
+        if (longWaitTimerRef.current) {
+          clearTimeout(longWaitTimerRef.current);
+          longWaitTimerRef.current = null;
+        }
         setUiState({ kind: 'idle' });
       },
       (err: Error & { type?: string }) => {
         cancelRef.current = null;
+        if (longWaitTimerRef.current) {
+          clearTimeout(longWaitTimerRef.current);
+          longWaitTimerRef.current = null;
+        }
         if (err.type === 'cancelled') {
           setUiState({ kind: 'idle' });
-          return;
-        }
-        if (err.type === 'window-exceeded') {
-          setUiState({ kind: 'prompt-continue', roomId });
           return;
         }
         console.error(err);
@@ -140,22 +172,19 @@ function JoinForm({
     );
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const roomId = normalizeRoomId(roomInput);
-    if (!playerName.trim() || !roomId || uiState.kind !== 'idle') return;
-    runJoin(roomId, INITIAL_JOIN_WINDOW_MS);
-  };
-
-  const handleCancel = () => {
+  const handleGiveUp = () => {
     cancelRef.current?.();
     cancelRef.current = null;
+    if (longWaitTimerRef.current) {
+      clearTimeout(longWaitTimerRef.current);
+      longWaitTimerRef.current = null;
+    }
     setUiState({ kind: 'idle' });
   };
 
-  const handleKeepTrying = () => {
-    if (uiState.kind !== 'prompt-continue') return;
-    runJoin(uiState.roomId, EXTEND_JOIN_WINDOW_MS);
+  const handleDismissLongWait = () => {
+    // Hide the banner, retry keeps running in the background.
+    setUiState((prev) => (prev.kind === 'joining' ? { ...prev, longWait: false } : prev));
   };
 
   if (uiState.kind === 'joining') {
@@ -165,57 +194,50 @@ function JoinForm({
         : uiState.progress.kind === 'timeout'
           ? t('home.joinTimeoutRetry')
           : t('home.joinConnecting', { roomId: uiState.roomId });
+
     return (
       <div
         data-slot="home-join-progress"
         data-progress={uiState.progress.kind}
+        data-long-wait={uiState.longWait}
         className="flex flex-col items-center gap-5 py-4"
       >
+        {uiState.longWait && (
+          <div
+            data-slot="home-join-long-wait"
+            className="w-full flex items-start gap-3 p-3 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200"
+          >
+            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            <div className="flex-1 text-sm leading-relaxed">
+              <p className="font-semibold">{t('home.joinTimeoutTitle')}</p>
+              <p className="mt-1 opacity-90">{t('home.joinTimeoutBody')}</p>
+            </div>
+            <button
+              data-slot="home-join-keep-trying"
+              type="button"
+              onClick={handleDismissLongWait}
+              aria-label={t('home.joinTimeoutKeepTrying')}
+              title={t('home.joinTimeoutKeepTrying')}
+              className="flex-shrink-0 p-1 rounded hover:bg-amber-100 dark:hover:bg-amber-900/40 transition"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
         <p className="text-sm text-center text-gray-600 dark:text-gray-300 leading-relaxed">
           {msg}
         </p>
-        <button
-          data-slot="home-join-cancel"
-          type="button"
-          onClick={handleCancel}
-          className="flex items-center gap-2 px-5 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-red-500 dark:hover:text-red-400 transition"
-        >
-          <X className="w-4 h-4" />
-          {t('home.joinCancel')}
-        </button>
-      </div>
-    );
-  }
-
-  if (uiState.kind === 'prompt-continue') {
-    return (
-      <div
-        data-slot="home-join-prompt"
-        className="flex flex-col items-center gap-4 py-4"
-      >
-        <h3 className="text-base font-semibold">{t('home.joinTimeoutTitle')}</h3>
-        <p className="text-sm text-center text-gray-600 dark:text-gray-300 leading-relaxed">
-          {t('home.joinTimeoutBody')}
-        </p>
-        <div className="flex gap-3 w-full">
+        <div className="flex gap-3">
           <button
-            data-slot="home-join-give-up"
+            data-slot="home-join-cancel"
             type="button"
-            onClick={handleCancel}
-            className="flex-1 px-4 py-2.5 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition"
+            onClick={handleGiveUp}
+            className="flex items-center gap-2 px-5 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-red-500 dark:hover:text-red-400 transition"
           >
-            {t('home.joinTimeoutGiveUp')}
-          </button>
-          <button
-            data-slot="home-join-keep-trying"
-            type="button"
-            onClick={handleKeepTrying}
-            className="flex-1 px-4 py-2.5 text-sm font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
-          >
-            {t('home.joinTimeoutKeepTrying', {
-              seconds: Math.round(EXTEND_JOIN_WINDOW_MS / 1000),
-            })}
+            <X className="w-4 h-4" />
+            {uiState.longWait ? t('home.joinTimeoutGiveUp') : t('home.joinCancel')}
           </button>
         </div>
       </div>

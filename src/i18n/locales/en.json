@@ -55,8 +55,8 @@
     "joinTimeoutRetry": "Host isn't responding — the room may be switching hosts, retrying...",
     "joinCancel": "Cancel",
     "joinTimeoutTitle": "Still haven't reached the room",
-    "joinTimeoutBody": "The room may have closed, or the host migration is taking longer than usual. Keep trying?",
-    "joinTimeoutKeepTrying": "Keep trying ({{seconds}}s)",
+    "joinTimeoutBody": "Still trying in the background. The room may have closed, or a host migration is running longer than usual. Give up if you'd rather stop.",
+    "joinTimeoutKeepTrying": "Dismiss",
     "joinTimeoutGiveUp": "Give up"
   },
   "room": {
