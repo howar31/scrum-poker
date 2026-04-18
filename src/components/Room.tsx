@@ -33,7 +33,7 @@ function HandCard({
     <button
       onClick={onClick}
       disabled={disabled}
-      data-testid="hand-card"
+      data-slot="hand-card"
       data-card-value={card}
       className={cn(
         'relative w-16 h-24 md:w-20 md:h-28 rounded-xl border-2 font-bold text-2xl md:text-3xl transition-colors focus:outline-none flex items-center justify-center flex-shrink-0',
@@ -92,6 +92,7 @@ export default function Room() {
         <div className="flex-1 flex flex-col gap-4 min-w-0">
           <div className="flex items-center justify-start">
             <button
+              data-slot="players-pill"
               onClick={() => setPlayersOpen(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-sm font-medium transition"
               aria-label={t('players.openPanel')}
@@ -115,6 +116,7 @@ export default function Room() {
           {amIHost && (
             <div className="flex justify-center gap-3">
               <button
+                data-slot="host-reset"
                 onClick={resetCards}
                 disabled={!isRevealed && !anyCardPlayed}
                 className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
@@ -123,6 +125,7 @@ export default function Room() {
                 {t('room.reset')}
               </button>
               <button
+                data-slot="host-reveal"
                 onClick={revealCards}
                 disabled={isRevealed || !anyCardPlayed}
                 className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition disabled:opacity-50 disabled:bg-blue-400 disabled:cursor-not-allowed shadow-md"

@@ -132,6 +132,7 @@ function App() {
           {roomId && (
             <div className="flex items-center gap-1 min-w-0">
               <button
+                data-slot="copy-room-id"
                 onClick={handleCopyId}
                 className="px-2.5 py-1.5 rounded-md font-mono font-bold text-sm md:text-base tracking-wider bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition"
                 title={t('app.copyRoomId')}
@@ -139,6 +140,7 @@ function App() {
                 {roomId}
               </button>
               <button
+                data-slot="copy-invite-link"
                 onClick={handleCopyLink}
                 className="p-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 transition"
                 title={t('app.copyLink')}
@@ -147,6 +149,8 @@ function App() {
                 <Link2 className="w-4 h-4" />
               </button>
               <button
+                data-slot="connection-status"
+                data-status={connectionStatus}
                 type="button"
                 onClick={() =>
                   pushToast({
@@ -176,6 +180,7 @@ function App() {
         <div className="flex gap-1 items-center flex-shrink-0">
           <div ref={menuRef} className="relative">
             <button
+              data-slot="menu-trigger"
               onClick={() => (menuOpen ? closeMenu() : setMenuOpen(true))}
               className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition"
               title={t('app.menu')}
@@ -192,6 +197,7 @@ function App() {
                 className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-40"
               >
                 <button
+                  data-slot="menu-language"
                   role="menuitem"
                   onClick={toggleLanguage}
                   className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition"
@@ -206,6 +212,7 @@ function App() {
                 </button>
 
                 <button
+                  data-slot="menu-animations"
                   role="menuitem"
                   onClick={() => setAnimationsEnabled(!animationsEnabled)}
                   className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition"
@@ -220,6 +227,7 @@ function App() {
                 </button>
 
                 <button
+                  data-slot="menu-theme"
                   role="menuitem"
                   onClick={toggleTheme}
                   className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition"
@@ -237,6 +245,8 @@ function App() {
                   <>
                     <div className="my-1 border-t border-gray-200 dark:border-gray-700" />
                     <button
+                      data-slot="menu-leave"
+                      data-confirming={confirmingLeave}
                       role="menuitem"
                       onClick={handleLeave}
                       className={`w-full flex items-center justify-between px-3 py-2 text-sm font-medium transition ${

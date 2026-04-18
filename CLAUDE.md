@@ -27,6 +27,7 @@ See `SPEC.md` for detailed architecture, state management, and P2P implementatio
 - Home page must expose exactly one primary CTA at a time (Create OR Join, chosen by `?room=` URL param).
 - Destructive / hard-to-undo actions (Leave, host transfer, kick) use a two-step arm-and-confirm pattern with a 3 s auto-disarm. Never a one-click action.
 - Moderator controls (transfer host, kick) live in `PlayersPanel` only — never on Table hover.
+- Every actionable control carries `data-slot="<component>-<action>"` for stable e2e automation. Add one when you add a new button / input. Full index: `SPEC.md` → "data-slot convention".
 
 ## P2P Rules
 

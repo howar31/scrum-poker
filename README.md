@@ -49,7 +49,7 @@ npm run lint
 
 ### End-to-end browser automation
 
-A single Puppeteer script at `scripts/e2e.js` drives the app through real browsers for smoke-testing and load simulation. All modes accept `--url` (defaults to `http://localhost:5173`) and other flags — run `npm run e2e -- --help` for the full list.
+A single Puppeteer script at `scripts/e2e.js` drives the app through real browsers for smoke-testing and load simulation. It targets `data-slot` attributes on the rendered controls so it's robust against i18n text changes and icon-only buttons. All modes accept `--url` (defaults to `http://localhost:5173`) and other flags — run `npm run e2e -- --help` for the full list.
 
 ```bash
 # Create a room in a headless browser and keep it alive

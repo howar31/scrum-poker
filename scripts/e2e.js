@@ -108,30 +108,31 @@ async function openPage(browser, { isolated }) {
 }
 
 async function fillName(page, name) {
-  await page.waitForSelector('input[placeholder*="name"]', { timeout: 15000 });
-  await page.type('input[placeholder*="name"]', name);
+  await page.waitForSelector('[data-slot="home-name"]', { timeout: 15000 });
+  await page.type('[data-slot="home-name"]', name);
 }
 
-async function clickButtonMatching(page, needles) {
-  return page.evaluate((ns) => {
-    const buttons = Array.from(document.querySelectorAll('button'));
-    const target = buttons.find((b) => {
-      const t = (b.textContent ?? '').trim();
-      return ns.some((n) => t.includes(n));
-    });
-    if (target) {
-      target.click();
+async function fillRoomId(page, roomId) {
+  await page.waitForSelector('[data-slot="home-room-id"]', { timeout: 15000 });
+  await page.type('[data-slot="home-room-id"]', roomId);
+}
+
+async function clickSlot(page, slot) {
+  return page.evaluate((id) => {
+    const el = document.querySelector(`[data-slot="${id}"]`);
+    if (el instanceof HTMLElement) {
+      el.click();
       return true;
     }
     return false;
-  }, needles);
+  }, slot);
 }
 
 // The Room component only mounts after the first STATE_UPDATE broadcast
-// arrives. The hand rail cards carry a stable `data-testid="hand-card"`
+// arrives. The hand rail cards carry a stable `data-slot="hand-card"`
 // attribute — waiting for one is language- and text-transform-agnostic.
 async function waitForRoomRender(page, timeoutMs = 25000) {
-  await page.waitForSelector('[data-testid="hand-card"]', { timeout: timeoutMs });
+  await page.waitForSelector('[data-slot="hand-card"]', { timeout: timeoutMs });
 }
 
 async function getRoomIdFromUrl(page) {
@@ -150,7 +151,7 @@ async function tryVote(page, name) {
   try {
     const clicked = await page.evaluate((value) => {
       const target = document.querySelector(
-        `[data-testid="hand-card"][data-card-value="${value}"]`
+        `[data-slot="hand-card"][data-card-value="${value}"]`
       );
       if (target instanceof HTMLElement) {
         target.click();
@@ -178,7 +179,7 @@ async function spawnSwarmClient(browser, name, joinUrl, { verbose = false } = {}
   try {
     await page.goto(joinUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
     await fillName(page, name);
-    await clickButtonMatching(page, ['Join Room', '加入房間']);
+    await clickSlot(page, 'home-join');
     try {
       await waitForRoomRender(page);
       console.log(`[${name}] joined${verbose ? ' (verbose)' : ''}`);
@@ -207,7 +208,7 @@ async function runHost(browser) {
   console.log(`Creating a room at ${baseUrl}...`);
   await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
   await fillName(page, nameOverride ?? 'Host');
-  await clickButtonMatching(page, ['Create New Room', '建立新房間']);
+  await clickSlot(page, 'home-create');
   await waitForRoomRender(page);
 
   const roomId = await getRoomIdFromUrl(page);
@@ -250,7 +251,7 @@ async function runE2E(browser) {
   const hostPage = await openPage(browser, { isolated: false });
   await hostPage.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
   await fillName(hostPage, 'Host');
-  await clickButtonMatching(hostPage, ['Create New Room', '建立新房間']);
+  await clickSlot(hostPage, 'home-create');
   await waitForRoomRender(hostPage);
   const roomId = await getRoomIdFromUrl(hostPage);
   console.log(`Host created room ${roomId}`);
@@ -289,7 +290,7 @@ async function runObserve(browser) {
   console.log(`Joining ${joinUrl} as silent observer...`);
   await page.goto(joinUrl, { waitUntil: 'domcontentloaded' });
   await fillName(page, nameOverride ?? 'Observer');
-  await clickButtonMatching(page, ['Join Room', '加入房間']);
+  await clickSlot(page, 'home-join');
 
   try {
     await waitForRoomRender(page, 20000);

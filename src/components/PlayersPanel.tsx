@@ -115,6 +115,7 @@ export default function PlayersPanel({
               'inset-x-0 bottom-0 max-h-[75vh] rounded-t-2xl',
               'md:inset-y-0 md:right-0 md:left-auto md:top-0 md:w-96 md:max-h-none md:rounded-none md:rounded-l-2xl'
             )}
+            data-slot="players-panel"
             role="dialog"
             aria-modal="true"
             aria-label={t('players.title')}
@@ -127,6 +128,7 @@ export default function PlayersPanel({
                 </span>
               </h2>
               <button
+                data-slot="players-panel-close"
                 onClick={onClose}
                 className="p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition text-gray-500"
                 aria-label={t('players.close')}
@@ -149,6 +151,8 @@ export default function PlayersPanel({
                 return (
                   <li
                     key={player.id}
+                    data-slot="player-row"
+                    data-player-id={player.id}
                     className="px-5 py-3 flex items-center gap-3 border-b border-gray-100 dark:border-gray-800 last:border-b-0"
                   >
                     <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -194,6 +198,9 @@ export default function PlayersPanel({
                       {amIHost && !isMe && (
                         <>
                           <button
+                            data-slot="player-make-host"
+                            data-player-id={player.id}
+                            data-confirming={transferPending}
                             onClick={() =>
                               handleAction('transfer', player.id, () => onMakeHost(player.id))
                             }
@@ -215,6 +222,9 @@ export default function PlayersPanel({
                             )}
                           </button>
                           <button
+                            data-slot="player-kick"
+                            data-player-id={player.id}
+                            data-confirming={kickPending}
                             onClick={() =>
                               handleAction('kick', player.id, () => onKick(player.id))
                             }

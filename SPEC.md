@@ -104,7 +104,19 @@ A purely frontend, serverless Peer-to-Peer (P2P) Scrum Poker application. It lev
 - **`e2e`** — host creates a room, N clients join, after a settle delay the script reads the host's DOM and asserts the `TesterNN` names appear. Exits with 0 on pass, 1 on fail — suitable for CI.
 - **`observe`** — single client joins `--room` and forwards browser console + page errors. Used for debugging PeerJS / migration issues.
 
-Entry points: `npm run e2e`, `e2e:host`, `e2e:swarm`, `e2e:check`, `e2e:observe` — pass flags after `--` (`npm run e2e:swarm -- --room XXX --count 5`). Room entry is detected via `data-testid="hand-card"` on hand-rail buttons (language- and text-transform-agnostic). Swarm mode also accepts `--verbose N` to forward the full browser console for the first N clients — useful when debugging host migration, since every `peerManager` log from those bots is piped to the terminal prefixed with their name.
+Entry points: `npm run e2e`, `e2e:host`, `e2e:swarm`, `e2e:check`, `e2e:observe` — pass flags after `--` (`npm run e2e:swarm -- --room XXX --count 5`). Room entry is detected via `data-slot="hand-card"` on hand-rail buttons (language- and text-transform-agnostic). Swarm mode also accepts `--verbose N` to forward the full browser console for the first N clients — useful when debugging host migration, since every `peerManager` log from those bots is piped to the terminal prefixed with their name.
+
+### data-slot convention
+
+Every user-actionable control in the app carries a `data-slot="<kebab-id>"` attribute; the e2e script uses these exclusively to locate targets, so puppeteer stays stable across i18n changes, CSS `text-transform`, and icon-only buttons.
+
+- App header: `copy-room-id`, `copy-invite-link`, `connection-status` (+ `data-status`), `menu-trigger`, `menu-language`, `menu-animations`, `menu-theme`, `menu-leave` (+ `data-confirming`)
+- Home: `home-name` (input), `home-room-id` (input), `home-create`, `home-join`, `home-not-this-room`, `home-join-fallback-toggle`
+- Room: `players-pill`, `host-reset`, `host-reveal`, `hand-card` (+ `data-card-value`)
+- Players panel: `players-panel` (root), `players-panel-close`, `player-row` (+ `data-player-id`), `player-make-host` / `player-kick` (+ `data-player-id`, `data-confirming`)
+- Toast: `toast-dismiss` (+ `data-toast-id`)
+
+When adding a new button or input that exercises app state, give it a `data-slot`. The naming is `<component>-<action>`; add supplementary `data-*` attributes only when the action needs a parameter (e.g. player id, card value) or reflects arming state.
 
 ## File Structure
 

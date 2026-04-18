@@ -29,6 +29,7 @@ function NameInput({
     <div>
       <label className="block text-sm font-medium mb-2">{t('home.yourName')}</label>
       <input
+        data-slot="home-name"
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -64,6 +65,7 @@ function CreateForm({ playerName, onNameChange }: { playerName: string; onNameCh
     <div className="space-y-5">
       <NameInput value={playerName} onChange={onNameChange} autoFocus />
       <button
+        data-slot="home-create"
         onClick={handleCreate}
         disabled={!playerName.trim() || busy}
         className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold p-3.5 rounded-lg transition flex items-center justify-center gap-2 shadow-md"
@@ -112,6 +114,7 @@ function JoinForm({
       <div>
         <label className="block text-sm font-medium mb-2">{t('home.roomIdLabel')}</label>
         <input
+          data-slot="home-room-id"
           type="text"
           value={roomInput}
           onChange={(e) => setRoomInput(e.target.value.toUpperCase())}
@@ -124,6 +127,7 @@ function JoinForm({
         />
       </div>
       <button
+        data-slot="home-join"
         type="submit"
         disabled={!playerName.trim() || !roomInput.trim() || busy}
         className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold p-3.5 rounded-lg transition flex items-center justify-center gap-2 shadow-md"
@@ -171,6 +175,7 @@ export default function Home() {
               initialRoomId={roomFromUrl}
             />
             <button
+              data-slot="home-not-this-room"
               onClick={clearRoomFromUrl}
               className="mt-6 w-full text-sm text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition"
             >
@@ -187,6 +192,7 @@ export default function Home() {
 
             <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
               <button
+                data-slot="home-join-fallback-toggle"
                 onClick={() => setShowJoinFallback((v) => !v)}
                 className="w-full flex items-center justify-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition"
               >
