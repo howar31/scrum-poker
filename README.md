@@ -1,5 +1,11 @@
 # Scrum Poker
 
+[![Deploy](https://github.com/howar31/scrum-poker/actions/workflows/deploy.yml/badge.svg)](https://github.com/howar31/scrum-poker/actions/workflows/deploy.yml)
+[![License: MIT](https://img.shields.io/github/license/howar31/scrum-poker?color=blue)](LICENSE)
+[![Last commit](https://img.shields.io/github/last-commit/howar31/scrum-poker?color=brightgreen)](https://github.com/howar31/scrum-poker/commits/main)
+[![Commit activity](https://img.shields.io/github/commit-activity/m/howar31/scrum-poker?color=orange)](https://github.com/howar31/scrum-poker/pulse)
+[![Issues](https://img.shields.io/github/issues/howar31/scrum-poker)](https://github.com/howar31/scrum-poker/issues)
+
 **Serverless · No Database · Open Source** — A peer-to-peer scrum poker app that runs entirely in your browser. No backend, no signup, no tracking.
 
 🔗 **Live**: [lab.howar31.com/scrum-poker/](https://lab.howar31.com/scrum-poker/)
