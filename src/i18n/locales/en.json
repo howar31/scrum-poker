@@ -112,7 +112,8 @@
     "youAreHost": "You are now the host",
     "hostLeftSwitching": "Host left, switching to {{name}}",
     "failedToConnectHost": "Failed to connect to new host ({{name}})",
-    "reclaimFailed": "Could not take over the room — leaving"
+    "reclaimFailed": "Could not take over the room — leaving",
+    "youWereKicked": "You have been removed from the room by the host"
   },
   "migration": {
     "reclaiming": "Taking over the room",
@@ -125,6 +126,7 @@
     "arcHint": " (Arc detected: open arc://flags, set \"Anonymize local IPs exposed to WebRTC\" to Disabled, restart Arc.)",
     "closedBeforeJoining": "Connection closed by host before joining.",
     "peerInitFailed": "Failed to initialize PeerJS",
-    "peerError": "Peer error"
+    "peerError": "Peer error",
+    "kicked": "Removed from the room by the host"
   }
 }

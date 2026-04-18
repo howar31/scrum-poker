@@ -37,6 +37,10 @@ Modes:
   crash     host + N clients (default 3), then kill the host page abruptly
             (no HOST_LEAVING) so migration is driven by heartbeat + handleHostDisconnect.
             Verifies the unplanned-disconnect path rather than the graceful one.
+  kick      host + N clients (default 3), host kicks Tester01, asserts
+            Tester01 lands on Home and survivors show the reduced playerCount.
+            Verifies the reconnect loop isn't too eager (kicked player
+            shouldn't pop right back in).
 
 Flags:
   --url <url>                   Base app URL (default: http://localhost:5173)
@@ -94,7 +98,10 @@ const durationSec = parsed.values.duration ? parseInt(parsed.values.duration, 10
 const headless = parsed.values.headless !== 'false';
 const nameOverride = parsed.values.name;
 
-if (!mode || !['host', 'swarm', 'e2e', 'observe', 'transfer', 'crash'].includes(mode)) {
+if (
+  !mode ||
+  !['host', 'swarm', 'e2e', 'observe', 'transfer', 'crash', 'kick'].includes(mode)
+) {
   console.error('Error: missing or invalid --mode. Run with --help for options.');
   process.exit(1);
 }
@@ -509,6 +516,137 @@ async function runCrash(browser) {
   await new Promise(() => {});
 }
 
+// Kick-out regression: host kicks Tester01 via the Players panel, we wait
+// out any auto-reconnect window, then assert Tester01 really left (Home
+// page visible, not a hand rail) and the remaining room shows the correct
+// reduced playerCount. Catches the "reconnect loop too eager, kicked
+// player pops right back" bug.
+async function runKick(browser) {
+  const clientCount = count || 3;
+  console.log(`Kick scenario: 1 host + ${clientCount} clients at ${baseUrl}`);
+
+  const hostPage = await openPage(browser, { isolated: false });
+  hostPage.on('console', (msg) => console.log('[Host]', msg.text().slice(0, 250)));
+  hostPage.on('pageerror', (err) => console.log('[Host] pageerror:', err.message));
+
+  await hostPage.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+  await fillName(hostPage, 'Host');
+  await clickSlot(hostPage, 'home-create');
+  await waitForRoomRender(hostPage);
+  const roomId = await getRoomIdFromUrl(hostPage);
+  console.log(`Host created room ${roomId}\n`);
+
+  const joinUrl = `${baseUrl}/?room=${roomId}`;
+  const clientPages = [];
+  for (let i = 0; i < clientCount; i++) {
+    const name = `Tester${String(i + 1).padStart(2, '0')}`;
+    const page = await spawnSwarmClient(browser, name, joinUrl, { verbose: true });
+    clientPages.push({ name, page });
+    await delay(1500);
+  }
+
+  console.log('\nLetting JOINs settle for 5 s...');
+  await delay(5000);
+
+  // Host triggers kick on Tester01. Open players panel → find row → click
+  // player-kick twice (arm + confirm).
+  console.log('\n>>> Host clicking Players pill <<<');
+  await clickSlot(hostPage, 'players-pill');
+  await delay(600);
+
+  const tester01Id = await hostPage.evaluate(() => {
+    const row = Array.from(document.querySelectorAll('[data-slot="player-row"]')).find(
+      (el) => el.textContent?.includes('Tester01')
+    );
+    return row?.getAttribute('data-player-id') ?? null;
+  });
+  if (!tester01Id) {
+    console.log('❌ Could not find Tester01 in player list');
+    return;
+  }
+  console.log(`Tester01 playerId = ${tester01Id}`);
+
+  const clickKick = () =>
+    hostPage.evaluate((pid) => {
+      const btn = document.querySelector(
+        `[data-slot="player-kick"][data-player-id="${pid}"]`
+      );
+      if (btn instanceof HTMLElement) {
+        btn.click();
+        return true;
+      }
+      return false;
+    }, tester01Id);
+
+  console.log('>>> Host clicking kick on Tester01 (1/2: arm) <<<');
+  const armed = await clickKick();
+  console.log(armed ? 'Armed OK' : '❌ Could not arm');
+  await delay(500);
+
+  console.log('>>> Host clicking kick on Tester01 (2/2: confirm) <<<');
+  const confirmed = await clickKick();
+  console.log(confirmed ? 'Confirmed OK — kick triggered' : '❌ Could not confirm');
+
+  // Wait longer than KICK_REJECT_WINDOW_MS (5 s) so we also prove the
+  // reject window expires cleanly without the kicked client popping back
+  // in during it. If they were going to reconnect, they would've by now.
+  console.log('\nObserving for 10 s (covers the 5 s reject window)...');
+  await delay(10000);
+
+  const snap = async (page, label) => {
+    const data = await page
+      .evaluate(() => {
+        const status = document
+          .querySelector('[data-slot="connection-status"]')
+          ?.getAttribute('data-status');
+        const roomBanner = document
+          .querySelector('[data-slot="copy-room-id"]')
+          ?.textContent?.trim();
+        const inRoom = !!document.querySelector('[data-slot="hand-card"]');
+        // Kicked clients should land back on Home, which shows
+        // home-create (no ?room=) or home-join (with ?room=). Either
+        // presence signals we're not in a Room anymore.
+        const onHome =
+          !!document.querySelector('[data-slot="home-create"]') ||
+          !!document.querySelector('[data-slot="home-join"]');
+        const pillText = document
+          .querySelector('[data-slot="players-pill"]')
+          ?.textContent?.trim();
+        const playerCount = pillText ? (pillText.match(/\d+/)?.[0] ?? null) : null;
+        return { status, roomBanner, inRoom, onHome, playerCount };
+      })
+      .catch(() => null);
+    console.log(`[${label}]`, JSON.stringify(data));
+    return data;
+  };
+
+  console.log('\n>>> Final snapshots <<<');
+  const hostSnap = await snap(hostPage, 'Host');
+  const clientSnaps = [];
+  for (const { name, page } of clientPages) {
+    clientSnaps.push({ name, snap: await snap(page, name) });
+  }
+
+  // Host + (clientCount - 1) survivors (Tester01 was kicked).
+  const expectedCount = clientCount; // host + remaining testers
+  const tester01 = clientSnaps.find((c) => c.name === 'Tester01');
+  const survivors = clientSnaps.filter((c) => c.name !== 'Tester01');
+
+  const tester01Left = tester01?.snap?.onHome === true && tester01?.snap?.inRoom === false;
+  const survivorsInRoom =
+    hostSnap?.inRoom && survivors.every((c) => c.snap?.inRoom);
+  const countMatches =
+    String(hostSnap?.playerCount) === String(expectedCount) &&
+    survivors.every((c) => String(c.snap?.playerCount) === String(expectedCount));
+
+  console.log(
+    `\nResult: tester01Left=${tester01Left} survivorsInRoom=${survivorsInRoom} playerCountMatches=${countMatches} expected=${expectedCount}`
+  );
+
+  console.log('\nDone. Ctrl+C to exit.');
+  await new Promise(() => {});
+}
+
 async function main() {
   const browser = await puppeteer.launch({
     headless,
@@ -540,6 +678,9 @@ async function main() {
         break;
       case 'crash':
         await runCrash(browser);
+        break;
+      case 'kick':
+        await runKick(browser);
         break;
     }
   } finally {

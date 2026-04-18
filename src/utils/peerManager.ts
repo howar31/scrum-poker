@@ -32,7 +32,16 @@ export type Message =
   // (50 ms) was losing HOST_LEAVING across higher-latency cross-network
   // DataChannels — the SCTP send queue would be dropped at destroy before
   // the message was ack'd, leaving some clients oblivious to the handoff.
-  | { type: 'HOST_LEAVING_ACK' };
+  | { type: 'HOST_LEAVING_ACK' }
+  // Host → kicked client. Sent right before the host closes the conn.
+  // Without this, the client's conn.on('close') would call
+  // onHostConnectionLost → probe well-known → succeed → JOIN again, and
+  // the host would re-add them as a fresh player. With KICKED, the
+  // client sets `intentionalLeave = true` and tears down locally so no
+  // reconnect is attempted. Defense in depth: the host also remembers
+  // kicked playerIds and rejects any subsequent JOIN from them (covers
+  // the case where the KICKED message itself is lost).
+  | { type: 'KICKED' };
 
 const PEER_PREFIX = 'scrum-poker-';
 // Reclaim backoff for new host taking over the well-known peer ID. Covers the
@@ -71,6 +80,16 @@ const HOST_LEAVING_SETTLE_MS = 200;
 // settle and the successor may briefly reject connections while flipping
 // `isHost = true`.
 const MIGRATION_RECONNECT_BUDGET_MS = 20000;
+// How long the host ignores JOIN attempts from a just-kicked playerId.
+// Short by design: long enough to outlast the kicked client's automatic
+// reconnect cycle (conn.close → probe → JOIN), but short enough that a
+// user who genuinely wants to rejoin can do so manually a moment later.
+// Kick is "stop the auto-reconnect loop", not a ban.
+const KICK_REJECT_WINDOW_MS = 5000;
+// Flush delay between sending KICKED and closing the kicked client's
+// DataConnection. Small but non-zero so the message lands before SCTP
+// drops the send queue.
+const KICK_MESSAGE_FLUSH_MS = 200;
 
 interface JoinRetryHandle {
   /** Cancels any pending peer.connect and stops retries. */
@@ -109,6 +128,15 @@ class PeerManager {
   // succeeds. `null` when the primary peer already owns the well-known ID
   // (original `createRoom` path) or when reclaim hasn't completed yet.
   private wellKnownPeer: Peer | null = null;
+  // Host-side: playerIds that were recently kicked → absolute timestamp
+  // after which we'll accept a fresh JOIN from them again. Defense in
+  // depth for the case where our KICKED message was lost in transit and
+  // the client's conn.close would otherwise trigger an immediate auto-
+  // reconnect → the host would re-add them as a new player. The window
+  // is deliberately short (KICK_REJECT_WINDOW_MS): the kicked user can
+  // still manually re-join a few seconds later if they actually want to,
+  // so kicking is "dismiss the auto-reconnect loop", not a permanent ban.
+  private kickedUntil: Map<string, number> = new Map();
   private connections: Map<string, DataConnection> = new Map();
   private hostConnection: DataConnection | null = null;
   private isHost: boolean = false;
@@ -350,6 +378,14 @@ class PeerManager {
           settle(() => resolve());
         } else if (data?.type === 'HOST_LEAVING') {
           this.handleHostLeaving(data.payload.nextHostId);
+        } else if (data?.type === 'KICKED') {
+          // If the kick arrives BEFORE joinViaHost has resolved (edge
+          // case — e.g. a rejected re-join during the reject window),
+          // settle as an error so the caller stops retrying.
+          if (!settled) {
+            settle(() => reject(new Error(i18n.t('errors.kicked'))));
+          }
+          this.handleKicked();
         }
       });
 
@@ -500,6 +536,35 @@ class PeerManager {
 
     switch (action.type) {
       case 'JOIN': {
+        // Reject JOINs from a recently-kicked playerId. Covers the race
+        // where our KICKED message was lost and the client is mid-
+        // auto-reconnect. The window self-expires so manual re-joins
+        // work normally a moment later.
+        const kickUntil = this.kickedUntil.get(action.payload.id);
+        if (kickUntil !== undefined) {
+          if (Date.now() < kickUntil) {
+            console.log(
+              '[peerManager] rejecting JOIN from recently kicked',
+              action.payload.id
+            );
+            if (sourceConn && sourceConn.open) {
+              try {
+                sourceConn.send({ type: 'KICKED' } as Message);
+              } catch {
+                /* ignore */
+              }
+              setTimeout(() => {
+                try {
+                  sourceConn.close();
+                } catch {
+                  /* ignore */
+                }
+              }, KICK_MESSAGE_FLUSH_MS);
+            }
+            return;
+          }
+          this.kickedUntil.delete(action.payload.id);
+        }
         const existing = newPlayers[action.payload.id];
         if (existing) {
           // Same playerId reconnecting (e.g. refreshed their tab and persisted
@@ -557,9 +622,38 @@ class PeerManager {
         const kickPeerId = newPlayers[action.payload.id]?.peerId;
         delete newPlayers[action.payload.id];
         usePokerStore.getState().updateRoomState({ players: newPlayers });
+        // Remember the kicked playerId briefly so the client's automatic
+        // reconnect (conn.close → probe → JOIN) is rejected instead of
+        // silently re-adding them. Expires after KICK_REJECT_WINDOW_MS
+        // so a genuine manual re-join still works moments later.
+        this.kickedUntil.set(action.payload.id, Date.now() + KICK_REJECT_WINDOW_MS);
         if (kickPeerId) {
           const connToKick = this.connections.get(kickPeerId);
-          if (connToKick) connToKick.close();
+          // Drop from the connections map BEFORE the trailing
+          // broadcastState at the end of processAction. Otherwise the
+          // kicked client races the KICKED message with a fresh
+          // STATE_UPDATE (which puts them right back into the Room UI
+          // via updateRoomState after leaveRoom).
+          this.connections.delete(kickPeerId);
+          if (connToKick && connToKick.open) {
+            // Tell the kicked client so they can tear down locally and
+            // show a toast, instead of trying to reconnect. Defense in
+            // depth: even if this message is lost, `kickedUntil` will
+            // reject their JOIN for 5 s.
+            try {
+              connToKick.send({ type: 'KICKED' } as Message);
+            } catch (err) {
+              console.warn('[peerManager] KICKED send failed', err);
+            }
+            // Small flush before closing so the SCTP queue isn't dropped.
+            setTimeout(() => {
+              try {
+                connToKick.close();
+              } catch {
+                /* ignore */
+              }
+            }, KICK_MESSAGE_FLUSH_MS);
+          }
         }
         break;
       }
@@ -745,6 +839,26 @@ class PeerManager {
     } finally {
       this.reconnecting = false;
     }
+  }
+
+  // Received KICKED from the host. Tear down locally and return to Home
+  // without any reconnect attempt. `intentionalLeave = true` stops the
+  // broker-reconnect path inside peer.on('disconnected'); clearing
+  // reconnecting / migrationAttempted ensures handleHostLeaving /
+  // onHostConnectionLost cascades can't re-fire during teardown.
+  private handleKicked() {
+    console.warn('[peerManager] received KICKED from host, leaving room');
+    this.intentionalLeave = true;
+    this.reconnecting = false;
+    this.migrationAttempted = false;
+    this.stopHeartbeatWatchdog();
+    usePokerStore.getState().pushToast({
+      message: i18n.t('toast.youWereKicked'),
+      variant: 'warning',
+    });
+    usePokerStore.getState().leaveRoom();
+    this.destroy();
+    this.isHost = false;
   }
 
   // Unplanned disconnect migration: elect the earliest-joined non-host player

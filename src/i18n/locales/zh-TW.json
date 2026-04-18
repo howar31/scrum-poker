@@ -111,7 +111,8 @@
     "youAreHost": "你已成為新的 Host",
     "hostLeftSwitching": "Host 已離線,切換到 {{name}}",
     "failedToConnectHost": "無法連線到新 Host ({{name}})",
-    "reclaimFailed": "無法接手房間,已離開"
+    "reclaimFailed": "無法接手房間,已離開",
+    "youWereKicked": "你已被房主踢出房間"
   },
   "migration": {
     "reclaiming": "接手房間中",
@@ -124,6 +125,7 @@
     "arcHint": " (偵測到 Arc:請開啟 arc://flags,把「Anonymize local IPs exposed to WebRTC」設為 Disabled 並重啟 Arc。)",
     "closedBeforeJoining": "Host 在加入前關閉了連線。",
     "peerInitFailed": "PeerJS 初始化失敗",
-    "peerError": "連線錯誤"
+    "peerError": "連線錯誤",
+    "kicked": "已被房主踢出房間"
   }
 }
