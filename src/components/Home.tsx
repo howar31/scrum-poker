@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 import { ChevronDown, Plus, LogIn } from 'lucide-react';
 import { usePokerStore } from '../store/usePokerStore';
 import { peerManager } from '../utils/peerManager';
@@ -23,14 +24,15 @@ function NameInput({
   onChange: (v: string) => void;
   autoFocus?: boolean;
 }) {
+  const { t } = useTranslation();
   return (
     <div>
-      <label className="block text-sm font-medium mb-2">Your name</label>
+      <label className="block text-sm font-medium mb-2">{t('home.yourName')}</label>
       <input
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="Enter your name..."
+        placeholder={t('home.namePlaceholder')}
         autoFocus={autoFocus}
         className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 outline-none"
       />
@@ -39,6 +41,7 @@ function NameInput({
 }
 
 function CreateForm({ playerName, onNameChange }: { playerName: string; onNameChange: (v: string) => void }) {
+  const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
 
   const handleCreate = async () => {
@@ -49,7 +52,7 @@ function CreateForm({ playerName, onNameChange }: { playerName: string; onNameCh
     } catch (err) {
       console.error(err);
       usePokerStore.getState().pushToast({
-        message: err instanceof Error ? err.message : 'Failed to create room',
+        message: err instanceof Error ? err.message : t('home.failedCreate'),
         variant: 'error',
       });
     } finally {
@@ -66,7 +69,7 @@ function CreateForm({ playerName, onNameChange }: { playerName: string; onNameCh
         className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold p-3.5 rounded-lg transition flex items-center justify-center gap-2 shadow-md"
       >
         <Plus className="w-5 h-5" />
-        {busy ? 'Creating...' : 'Create New Room'}
+        {busy ? t('home.creating') : t('home.createRoom')}
       </button>
     </div>
   );
@@ -81,6 +84,7 @@ function JoinForm({
   onNameChange: (v: string) => void;
   initialRoomId: string;
 }) {
+  const { t } = useTranslation();
   const [roomInput, setRoomInput] = useState(initialRoomId);
   const [busy, setBusy] = useState(false);
 
@@ -94,7 +98,7 @@ function JoinForm({
     } catch (err) {
       console.error(err);
       usePokerStore.getState().pushToast({
-        message: err instanceof Error ? err.message : 'Failed to join room',
+        message: err instanceof Error ? err.message : t('home.failedJoin'),
         variant: 'error',
       });
     } finally {
@@ -106,12 +110,12 @@ function JoinForm({
     <form onSubmit={handleJoin} className="space-y-5">
       <NameInput value={playerName} onChange={onNameChange} autoFocus={!initialRoomId} />
       <div>
-        <label className="block text-sm font-medium mb-2">Room ID</label>
+        <label className="block text-sm font-medium mb-2">{t('home.roomIdLabel')}</label>
         <input
           type="text"
           value={roomInput}
           onChange={(e) => setRoomInput(e.target.value.toUpperCase())}
-          placeholder="ABC1234"
+          placeholder={t('home.roomIdPlaceholder')}
           maxLength={10}
           autoCapitalize="characters"
           autoComplete="off"
@@ -125,13 +129,14 @@ function JoinForm({
         className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold p-3.5 rounded-lg transition flex items-center justify-center gap-2 shadow-md"
       >
         <LogIn className="w-5 h-5" />
-        {busy ? 'Joining...' : 'Join Room'}
+        {busy ? t('home.joining') : t('home.joinRoom')}
       </button>
     </form>
   );
 }
 
 export default function Home() {
+  const { t } = useTranslation();
   const { playerName, setPlayerName } = usePokerStore();
   const [roomFromUrl] = useState(readRoomFromUrl);
   const [showJoinFallback, setShowJoinFallback] = useState(false);
@@ -152,9 +157,13 @@ export default function Home() {
       <div className="w-full bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700">
         {hasRoomInUrl ? (
           <>
-            <h2 className="text-xl font-bold mb-1">You're invited</h2>
+            <h2 className="text-xl font-bold mb-1">{t('home.invitedTitle')}</h2>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-              Joining room <span className="font-mono font-bold">{roomFromUrl}</span>
+              <Trans
+                i18nKey="home.invitedSubtitle"
+                values={{ roomId: roomFromUrl }}
+                components={{ b: <span className="font-mono font-bold" /> }}
+              />
             </p>
             <JoinForm
               playerName={playerName}
@@ -165,14 +174,14 @@ export default function Home() {
               onClick={clearRoomFromUrl}
               className="mt-6 w-full text-sm text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition"
             >
-              Not this room? Create a new one instead →
+              {t('home.notThisRoom')}
             </button>
           </>
         ) : (
           <>
-            <h2 className="text-xl font-bold mb-1">Start a session</h2>
+            <h2 className="text-xl font-bold mb-1">{t('home.startTitle')}</h2>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-              Create a new room and share the link with your team.
+              {t('home.startSubtitle')}
             </p>
             <CreateForm playerName={playerName} onNameChange={setPlayerName} />
 
@@ -181,7 +190,7 @@ export default function Home() {
                 onClick={() => setShowJoinFallback((v) => !v)}
                 className="w-full flex items-center justify-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition"
               >
-                Or join an existing room with a Room ID
+                {t('home.fallbackToggle')}
                 <ChevronDown
                   className={`w-4 h-4 transition-transform ${showJoinFallback ? 'rotate-180' : ''}`}
                 />

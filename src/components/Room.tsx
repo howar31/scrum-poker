@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 import { RotateCcw, Eye } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -59,6 +60,7 @@ function HandCard({
 }
 
 export default function Room() {
+  const { t } = useTranslation();
   const { hostId, playerId, players, isRevealed } = usePokerStore();
 
   const amIHost = hostId === playerId;
@@ -101,7 +103,7 @@ export default function Room() {
                 className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <RotateCcw className="w-4 h-4" />
-                Reset
+                {t('room.reset')}
               </button>
               <button
                 onClick={revealCards}
@@ -109,7 +111,7 @@ export default function Room() {
                 className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition disabled:opacity-50 disabled:bg-blue-400 disabled:cursor-not-allowed shadow-md"
               >
                 <Eye className="w-4 h-4" />
-                Reveal
+                {t('room.reveal')}
               </button>
             </div>
           )}
@@ -124,10 +126,10 @@ export default function Room() {
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 md:p-5">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-            Your hand
+            {t('room.yourHand')}
           </h2>
           {isRevealed && (
-            <span className="text-xs text-gray-400">Waiting for host to reset...</span>
+            <span className="text-xs text-gray-400">{t('room.waitingReset')}</span>
           )}
         </div>
         {/* pt-8 reserves vertical room for the hover/selected lift so the

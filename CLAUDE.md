@@ -16,6 +16,7 @@ See `SPEC.md` for detailed architecture, state management, and P2P implementatio
 - **Styling**: TailwindCSS
 - **State Management**: Zustand (with `persist` middleware on `localStorage`)
 - **P2P**: PeerJS (Room ID is `scrum-poker-{roomId}`, where `roomId` is 7-char Crockford Base32)
+- **i18n**: `react-i18next`. All user-facing strings live in `src/i18n/locales/{en,zh-TW}.json` — never hardcode strings in JSX. In components use `useTranslation()`; outside React (e.g. `peerManager.ts`) import the `i18n` instance directly.
 - **Code Style**: Comments must be in English.
 - Use `lucide-react` for icons.
 - Prefer `clsx` and `tailwind-merge` for conditional classes.

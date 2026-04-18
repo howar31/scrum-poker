@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 import { Target } from 'lucide-react';
 import { usePokerStore } from '../store/usePokerStore';
 import { computeStats } from '../utils/stats';
@@ -13,6 +14,7 @@ function MetricCard({ label, value }: { label: string; value: string }) {
 }
 
 export default function Statistics() {
+  const { t } = useTranslation();
   const { players, isRevealed, animationsEnabled } = usePokerStore();
   const stats = computeStats(players);
 
@@ -22,7 +24,7 @@ export default function Statistics() {
     return (
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-5 flex flex-col gap-3">
         <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-          Voting
+          {t('stats.voting')}
         </h3>
         <div className="text-3xl font-bold">
           {stats.voteCount}
@@ -32,8 +34,8 @@ export default function Statistics() {
         </div>
         <div className="text-sm text-gray-500 dark:text-gray-400">
           {stats.voteCount === stats.totalPlayers && stats.totalPlayers > 0
-            ? 'Everyone has voted — ready to reveal.'
-            : 'Waiting for votes...'}
+            ? t('stats.everyoneVoted')
+            : t('stats.waitingVotes')}
         </div>
         <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden mt-1">
           <motion.div
@@ -53,7 +55,7 @@ export default function Statistics() {
   return (
     <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-5 flex flex-col gap-4">
       <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-        Results
+        {t('stats.results')}
       </h3>
 
       <AnimatePresence>
@@ -69,7 +71,7 @@ export default function Statistics() {
             <Target className="w-6 h-6 text-green-600 dark:text-green-400 flex-shrink-0" />
             <div>
               <div className="text-xs uppercase tracking-wider text-green-700 dark:text-green-300">
-                Consensus
+                {t('stats.consensus')}
               </div>
               <div className="text-2xl font-bold text-green-700 dark:text-green-200 font-mono">
                 {stats.consensus}
@@ -81,19 +83,19 @@ export default function Statistics() {
 
       <div className="flex gap-2">
         <MetricCard
-          label="Average"
+          label={t('stats.average')}
           value={stats.average !== null ? String(stats.average) : '—'}
         />
-        <MetricCard label="Min" value={stats.min !== null ? String(stats.min) : '—'} />
-        <MetricCard label="Max" value={stats.max !== null ? String(stats.max) : '—'} />
+        <MetricCard label={t('stats.min')} value={stats.min !== null ? String(stats.min) : '—'} />
+        <MetricCard label={t('stats.max')} value={stats.max !== null ? String(stats.max) : '—'} />
       </div>
 
       <div className="flex flex-col gap-1.5">
         <div className="text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400">
-          Distribution
+          {t('stats.distribution')}
         </div>
         {stats.distribution.length === 0 ? (
-          <div className="text-sm text-gray-400">No votes</div>
+          <div className="text-sm text-gray-400">{t('stats.noVotes')}</div>
         ) : (
           stats.distribution.map((d, idx) => (
             <div key={d.card} className="flex items-center gap-2 text-sm">
@@ -122,8 +124,9 @@ export default function Statistics() {
 
       {stats.voteCount > stats.numericVoteCount && (
         <div className="text-xs text-gray-400 dark:text-gray-500">
-          {stats.voteCount - stats.numericVoteCount} non-numeric vote
-          {stats.voteCount - stats.numericVoteCount > 1 ? 's' : ''} excluded from averages.
+          {t('stats.nonNumericExcluded', {
+            count: stats.voteCount - stats.numericVoteCount,
+          })}
         </div>
       )}
     </div>

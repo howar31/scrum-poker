@@ -1,0 +1,83 @@
+{
+  "app": {
+    "title": "Scrum Poker",
+    "copyRoomId": "點擊複製房間 ID",
+    "copyLink": "複製邀請連結",
+    "roomIdCopied": "已複製房間 ID",
+    "linkCopied": "已複製邀請連結",
+    "connected": "已連線",
+    "disconnected": "已斷線",
+    "disableAnimations": "關閉動畫",
+    "enableAnimations": "開啟動畫",
+    "toggleTheme": "切換主題",
+    "switchLanguage": "切換語言",
+    "leaveRoom": "離開房間",
+    "leave": "離開"
+  },
+  "home": {
+    "yourName": "你的名字",
+    "namePlaceholder": "輸入你的名字...",
+    "creating": "建立中...",
+    "createRoom": "建立新房間",
+    "roomIdLabel": "房間 ID",
+    "roomIdPlaceholder": "ABC1234",
+    "joining": "加入中...",
+    "joinRoom": "加入房間",
+    "invitedTitle": "收到邀請",
+    "invitedSubtitle": "即將加入房間 <b>{{roomId}}</b>",
+    "notThisRoom": "不是這個房間?改建立新房間 →",
+    "startTitle": "開始一場估算",
+    "startSubtitle": "建立新房間並把連結分享給團隊。",
+    "fallbackToggle": "或使用房間 ID 加入現有房間",
+    "failedCreate": "建立房間失敗",
+    "failedJoin": "加入房間失敗"
+  },
+  "room": {
+    "reset": "重設",
+    "reveal": "揭牌",
+    "yourHand": "你的手牌",
+    "waitingReset": "等待 Host 重設..."
+  },
+  "stats": {
+    "voting": "投票進度",
+    "everyoneVoted": "所有人都投完了 — 可以揭牌。",
+    "waitingVotes": "等待投票中...",
+    "results": "結果",
+    "consensus": "共識",
+    "average": "平均",
+    "min": "最小",
+    "max": "最大",
+    "distribution": "分佈",
+    "noVotes": "尚無投票",
+    "nonNumericExcluded_other": "有 {{count}} 張非數字牌未計入平均。"
+  },
+  "table": {
+    "waitingPlayers": "等待其他玩家加入...",
+    "you": "你",
+    "makeHost": "設為 Host",
+    "kick": "踢出"
+  },
+  "arc": {
+    "title": "偵測到 Arc 瀏覽器",
+    "description": "Arc 的隱私設定可能會阻擋 WebRTC 連線。如果無法建立或加入房間,請開啟 <code>arc://flags</code>,搜尋 <em>\"Anonymize local IPs exposed to WebRTC\"</em>,設定為 <strong>Disabled</strong>,然後重啟 Arc。Chrome、Firefox、Safari 則不需要任何設定。"
+  },
+  "toast": {
+    "connectionLost": "連線中斷,正在重試 ({{attempt}}/{{max}})...",
+    "reconnected": "已重新連上",
+    "findingNewHost": "連線無法恢復,正在尋找新的 Host...",
+    "playerOffline": "{{name}} 已離線",
+    "playerJoined": "{{name}} 已加入",
+    "playerReconnected": "{{name}} 已重新連上",
+    "roomEmpty": "房間已空,已離開",
+    "youAreHost": "你已成為新的 Host",
+    "hostLeftSwitching": "Host 已離線,切換到 {{name}}",
+    "failedToConnectHost": "無法連線到新 Host ({{name}})"
+  },
+  "errors": {
+    "connectionTimeout": "連線至 Host 逾時 (20 秒)。請確認房間 ID、Host 是否在線,或檢查你的網路。",
+    "arcHint": " (偵測到 Arc:請開啟 arc://flags,把「Anonymize local IPs exposed to WebRTC」設為 Disabled 並重啟 Arc。)",
+    "closedBeforeJoining": "Host 在加入前關閉了連線。",
+    "peerInitFailed": "PeerJS 初始化失敗",
+    "peerError": "連線錯誤"
+  }
+}

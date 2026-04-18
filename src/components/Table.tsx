@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 import { Crown, UserMinus } from 'lucide-react';
 import { usePokerStore, type Player } from '../store/usePokerStore';
 import Card from './Card';
@@ -50,6 +51,7 @@ function PlayerSeat({
   onMakeHost: () => void;
   onKick: () => void;
 }) {
+  const { t } = useTranslation();
   const { animationsEnabled } = usePokerStore();
   const tilt = useMemo(() => tiltForPlayerId(player.id), [player.id]);
 
@@ -88,7 +90,7 @@ function PlayerSeat({
         </span>
         {isMe && (
           <span className="text-[10px] bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 rounded text-gray-600 dark:text-gray-300 uppercase tracking-wider">
-            You
+            {t('table.you')}
           </span>
         )}
       </div>
@@ -97,14 +99,14 @@ function PlayerSeat({
         <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-2 right-0 flex gap-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-sm p-0.5">
           <button
             onClick={onMakeHost}
-            title="Make Host"
+            title={t('table.makeHost')}
             className="p-1 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded"
           >
             <Crown className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={onKick}
-            title="Kick"
+            title={t('table.kick')}
             className="p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded"
           >
             <UserMinus className="w-3.5 h-3.5" />
@@ -124,6 +126,7 @@ export default function Table({
   onMakeHost,
   onKick,
 }: TableProps) {
+  const { t } = useTranslation();
   return (
     <div className="relative bg-gradient-to-br from-emerald-800/90 via-emerald-900 to-green-950 dark:from-emerald-900 dark:via-emerald-950 dark:to-black rounded-3xl shadow-inner border-2 border-emerald-950/40 px-6 py-10 md:py-14 min-h-[20rem] overflow-hidden">
       {/* Subtle felt texture */}
@@ -137,7 +140,7 @@ export default function Table({
 
       {players.length === 0 ? (
         <div className="relative text-center text-emerald-100/70 py-12">
-          Waiting for players to join...
+          {t('table.waitingPlayers')}
         </div>
       ) : (
         <div className="relative flex flex-wrap items-end justify-center gap-x-6 gap-y-10">

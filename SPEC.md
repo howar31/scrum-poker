@@ -81,6 +81,7 @@ A purely frontend, serverless Peer-to-Peer (P2P) Scrum Poker application. It lev
 - **Toasts**: right-side slide-in / fade-out with `AnimatePresence`, auto-dismiss after 3.5 s. Rendered at the `App` root so they appear in both Home and Room views. All user-facing errors (connection failures, peer errors) go through this channel — there is no inline error banner.
 - **Accessibility / Performance**: `animationsEnabled` toggle respected by every animated component.
 - **Theming**: Dark mode support via Tailwind's `dark:` classes and toggled on `<html>` element.
+- **i18n**: `react-i18next` powers the UI language. Initialised in `src/i18n/index.ts` with `i18next-browser-languagedetector` — order is `localStorage` → `navigator`, cached in `localStorage` under key `scrum-poker-lang`. Supported languages: `en`, `zh-TW`; fallback is `en`. Locale files live in `src/i18n/locales/`. React components read strings via `useTranslation()` (`t('namespace.key')`); non-React code (`peerManager.ts`) imports the `i18n` instance and calls `i18n.t(...)` directly. A language toggle in the header flips between `en` and `zh-TW`.
 
 ### 10. Room Lifecycle
 
@@ -96,6 +97,7 @@ A purely frontend, serverless Peer-to-Peer (P2P) Scrum Poker application. It lev
   - `Card.tsx` — display card with tilt, foil, physical flip, smoke
   - `ArcBrowserWarning.tsx` — amber banner shown to Arc users
   - `Toast.tsx` — top-right toast container, driven by the store
+- `src/i18n/` — `react-i18next` setup and locale files (`locales/en.json`, `locales/zh-TW.json`).
 - `src/store/usePokerStore.ts` — Zustand state, persistence, and toast queue.
 - `src/utils/`
   - `peerManager.ts` — PeerJS wrapper: `createRoom`, `joinRoom`, `joinHost`, `scheduleReconnect`, `handleHostDisconnect`, `transferHost`, `leave`.

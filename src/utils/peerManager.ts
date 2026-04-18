@@ -1,4 +1,5 @@
 import Peer, { type DataConnection } from 'peerjs';
+import i18n from '../i18n';
 import { usePokerStore, type CardValue, type Player, type RoomState } from '../store/usePokerStore';
 import { generateRoomId } from './roomId';
 import { isArcBrowser } from './browserDetect';
@@ -123,7 +124,7 @@ class PeerManager {
     this.isHost = false;
 
     if (!this.peer || this.peer.disconnected) await this.init();
-    if (!this.peer) throw new Error('Failed to initialize PeerJS');
+    if (!this.peer) throw new Error(i18n.t('errors.peerInitFailed'));
 
     const hostPeerId = `${PEER_PREFIX}${roomId}`;
     console.log('[peerManager] joinRoom: my peerId=', this.peer.id, 'connecting to', hostPeerId);
@@ -141,16 +142,14 @@ class PeerManager {
 
       const onPeerError = (err: { type?: string; message?: string }) => {
         console.error('[peerManager] joinRoom peer error:', err.type, err.message);
-        settle(() => reject(new Error(err.message ?? 'Peer error')));
+        settle(() => reject(new Error(err.message ?? i18n.t('errors.peerError'))));
       };
 
       this.peer!.on('error', onPeerError);
 
       const timeoutId: ReturnType<typeof setTimeout> = setTimeout(() => {
-        const baseMsg = 'Connection to host timed out (20s). Check the Room ID, confirm the host is online, or verify your network.';
-        const arcHint = isArcBrowser()
-          ? ' (Arc detected: open arc://flags, set "Anonymize local IPs exposed to WebRTC" to Disabled, restart Arc.)'
-          : '';
+        const baseMsg = i18n.t('errors.connectionTimeout');
+        const arcHint = isArcBrowser() ? i18n.t('errors.arcHint') : '';
         settle(() => reject(new Error(baseMsg + arcHint)));
       }, 20000);
 
@@ -166,7 +165,7 @@ class PeerManager {
       conn.on('close', () => {
         console.warn('[peerManager] joinRoom conn closed (settled=', settled, ')');
         if (!settled) {
-          settle(() => reject(new Error('Connection closed by host before joining.')));
+          settle(() => reject(new Error(i18n.t('errors.closedBeforeJoining'))));
           return;
         }
         // Connection was previously open; trigger reconnect → migration fallback.
@@ -236,7 +235,7 @@ class PeerManager {
       const player = Object.values(state.players).find((p) => p.peerId === conn.peer);
       if (player) {
         usePokerStore.getState().pushToast({
-          message: `${player.name} 已離線`,
+          message: i18n.t('toast.playerOffline', { name: player.name }),
           variant: 'warning',
         });
         const newPlayers = { ...state.players };
@@ -274,7 +273,7 @@ class PeerManager {
             peerId: action.payload.peerId,
           };
           usePokerStore.getState().pushToast({
-            message: `${action.payload.name} 已重新連上`,
+            message: i18n.t('toast.playerReconnected', { name: action.payload.name }),
             variant: 'success',
           });
         } else {
@@ -286,7 +285,7 @@ class PeerManager {
             peerId: action.payload.peerId,
           };
           usePokerStore.getState().pushToast({
-            message: `${action.payload.name} 已加入`,
+            message: i18n.t('toast.playerJoined', { name: action.payload.name }),
             variant: 'info',
           });
         }
@@ -372,7 +371,7 @@ class PeerManager {
 
     if (this.reconnectAttempt >= RECONNECT_DELAYS_MS.length) {
       usePokerStore.getState().pushToast({
-        message: '連線無法恢復，正在尋找新的 Host...',
+        message: i18n.t('toast.findingNewHost'),
         variant: 'warning',
       });
       this.reconnectAttempt = 0;
@@ -384,7 +383,10 @@ class PeerManager {
     const attemptNumber = this.reconnectAttempt + 1;
     usePokerStore.getState().setConnected(false);
     usePokerStore.getState().pushToast({
-      message: `連線中斷，正在重試 (${attemptNumber}/${RECONNECT_DELAYS_MS.length})...`,
+      message: i18n.t('toast.connectionLost', {
+        attempt: attemptNumber,
+        max: RECONNECT_DELAYS_MS.length,
+      }),
       variant: 'info',
     });
 
@@ -397,7 +399,7 @@ class PeerManager {
         await this.joinRoom(roomId);
         this.reconnectAttempt = 0;
         usePokerStore.getState().pushToast({
-          message: '已重新連上',
+          message: i18n.t('toast.reconnected'),
           variant: 'success',
         });
       } catch (err) {
@@ -421,7 +423,7 @@ class PeerManager {
     if (!nextHost) {
       console.log('[peerManager] no candidates, leaving room');
       usePokerStore.getState().pushToast({
-        message: '房間已空，已離開',
+        message: i18n.t('toast.roomEmpty'),
         variant: 'info',
       });
       usePokerStore.getState().leaveRoom();
@@ -436,7 +438,7 @@ class PeerManager {
       usePokerStore.getState().updateRoomState({ hostId: playerId });
       usePokerStore.getState().setConnected(true);
       usePokerStore.getState().pushToast({
-        message: '你已成為新的 Host',
+        message: i18n.t('toast.youAreHost'),
         variant: 'success',
       });
       this.broadcastState();
@@ -445,13 +447,13 @@ class PeerManager {
 
     console.log('[peerManager] connecting to new host:', nextHost.name, nextHost.peerId);
     usePokerStore.getState().pushToast({
-      message: `Host 已離線，切換到 ${nextHost.name}`,
+      message: i18n.t('toast.hostLeftSwitching', { name: nextHost.name }),
       variant: 'info',
     });
     this.joinHost(nextHost.peerId).catch((err) => {
       console.error('[peerManager] failed to connect to new host:', err);
       usePokerStore.getState().pushToast({
-        message: `無法連線到新 Host (${nextHost.name})`,
+        message: i18n.t('toast.failedToConnectHost', { name: nextHost.name }),
         variant: 'error',
       });
     });
