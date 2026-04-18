@@ -25,7 +25,14 @@ export type Message =
   // successor. Lets clients skip the reconnect grace period and trigger the
   // direct-connect-to-successor flow immediately. Computed by the leaving
   // host so every client trusts the same authoritative choice.
-  | { type: 'HOST_LEAVING'; payload: { nextHostId: string | null } };
+  | { type: 'HOST_LEAVING'; payload: { nextHostId: string | null } }
+  // Client → old host: I received HOST_LEAVING, you can tear down now. Old
+  // host waits for ACKs from every client (or HOST_LEAVING_ACK_TIMEOUT_MS)
+  // before destroying its peer. Without this, a short pre-destroy flush
+  // (50 ms) was losing HOST_LEAVING across higher-latency cross-network
+  // DataChannels — the SCTP send queue would be dropped at destroy before
+  // the message was ack'd, leaving some clients oblivious to the handoff.
+  | { type: 'HOST_LEAVING_ACK' };
 
 const PEER_PREFIX = 'scrum-poker-';
 // Reclaim backoff for new host taking over the well-known peer ID. Covers the
@@ -47,6 +54,15 @@ const PING_TIMEOUT_MS = 8000;
 // Option A — single quick well-known-ID probe before migrating. Covers short
 // network blips so we don't kick off an unnecessary migration.
 const WELL_KNOWN_PROBE_TIMEOUT_MS = 2000;
+// How long the leaving host waits for clients to ACK HOST_LEAVING before
+// destroying its peer. Upper bound — if every client acks immediately, we
+// proceed as soon as they all do. Covers cross-network RTT + a margin so
+// the SCTP queue drains before we tear the DataChannel down.
+const HOST_LEAVING_ACK_TIMEOUT_MS = 2000;
+// Lower-bound extra delay after the ACK wait completes. Gives the OS a
+// moment to flush the DataChannel send buffer even after SCTP acked —
+// belt-and-braces against tight races on flaky networks.
+const HOST_LEAVING_SETTLE_MS = 200;
 // Total budget for reconnecting during a migration. Inside this window we
 // alternate direct-connect to the successor's original peer ID and connect
 // via the well-known ID (in case the successor has already opened the
@@ -681,6 +697,18 @@ class PeerManager {
     this.stopHeartbeatWatchdog();
 
     try {
+      // Send ACK back IMMEDIATELY so the departing host can tear down as
+      // soon as every client has acknowledged. Fire-and-forget — we don't
+      // block migration on whether the ACK actually leaves the queue; the
+      // departing side has its own timeout fallback.
+      if (this.hostConnection && this.hostConnection.open) {
+        try {
+          this.hostConnection.send({ type: 'HOST_LEAVING_ACK' } as Message);
+        } catch (err) {
+          console.warn('[peerManager] HOST_LEAVING_ACK send failed', err);
+        }
+      }
+
       const { playerId, roomId, players } = usePokerStore.getState();
       if (!roomId) return;
 
@@ -811,13 +839,77 @@ class PeerManager {
       }
     }
 
-    console.error('[peerManager] could not reconnect to successor after budget, leaving room');
+    console.warn(
+      '[peerManager] could not reconnect to successor after budget, entering deadman recovery'
+    );
     usePokerStore.getState().pushToast({
       message: i18n.t('toast.failedToConnectHost', { name: successorName }),
-      variant: 'error',
+      variant: 'warning',
     });
-    usePokerStore.getState().setMigrationPhase('idle');
-    usePokerStore.getState().leaveRoom();
+    const currentRoomId = usePokerStore.getState().roomId;
+    if (!currentRoomId) return;
+    await this.recoverNoHost(currentRoomId);
+  }
+
+  /**
+   * Deadman recovery — called when nobody ends up as host within the
+   * migration budget (typically because HOST_LEAVING was lost across
+   * the network before we could ACK it). Each remaining client computes
+   * its rank by `joinedAt`; the ex-host / room creator is always rank 0
+   * because they joined first, so they self-promote immediately and
+   * everyone else staggers. This matches the expectation that the
+   * original host is the one who "comes back" when a handoff fails,
+   * and the stagger prevents every client from simultaneously claiming
+   * host (which would split the room). Later ranks also try one last
+   * well-known connect in case a lower rank self-promoted during their
+   * wait — only if that fails do they also self-promote (accepting a
+   * brief split-brain that the well-known-ID reclaim race will resolve).
+   */
+  private async recoverNoHost(roomId: string) {
+    const state = usePokerStore.getState();
+    const sorted = Object.values(state.players).sort((a, b) => a.joinedAt - b.joinedAt);
+    const myRank = sorted.findIndex((p) => p.id === state.playerId);
+    if (myRank === -1) {
+      // Not in the players map anymore (e.g. already kicked). Bail cleanly.
+      usePokerStore.getState().setMigrationPhase('idle');
+      usePokerStore.getState().leaveRoom();
+      return;
+    }
+
+    // Rank 0 goes immediately. Every extra rank waits 3 s to give lower
+    // ranks a chance to self-promote and reclaim well-known first.
+    const staggerDelay = myRank * 3000;
+    console.log(
+      `[peerManager] recoverNoHost: rank=${myRank}, staggerDelay=${staggerDelay}ms`
+    );
+    if (staggerDelay > 0) {
+      await new Promise((r) => setTimeout(r, staggerDelay));
+    }
+
+    // Check whether we were rescued during the wait.
+    const latest = usePokerStore.getState();
+    if (!latest.roomId) return;
+    if (this.isHost) return;
+    if (this.hostConnection?.open) return;
+
+    // Non-rank-0: one last attempt at the well-known ID. If an earlier
+    // rank self-promoted during our wait, their background reclaim may
+    // have opened the secondary peer by now.
+    if (myRank > 0) {
+      try {
+        console.log('[peerManager] recoverNoHost: trying well-known once before self-promote');
+        await this.joinViaHost(`${PEER_PREFIX}${roomId}`, { timeoutMs: 3000 });
+        this.migrationAttempted = false;
+        return;
+      } catch (err) {
+        console.warn('[peerManager] recoverNoHost: well-known unavailable:', err);
+      }
+    }
+
+    console.log('[peerManager] recoverNoHost: self-promoting (rank', myRank, ')');
+    this.migrationAttempted = false;
+    // selfPromoteHost already pushes the `toast.youAreHost` toast.
+    await this.selfPromoteHost(roomId);
   }
 
   /**
@@ -1010,6 +1102,69 @@ class PeerManager {
     this.broadcastState();
   }
 
+  // Broadcast HOST_LEAVING to every open connection and wait for each
+  // client to ACK before resolving. Without the ACK step, a too-short
+  // pre-destroy delay was losing HOST_LEAVING across cross-network
+  // DataChannels — the SCTP send queue gets dropped when the peer is
+  // destroyed, and a 50 ms flush can't outrun RTTs of 100–500 ms.
+  // Returns once every connection has ack'd OR after the timeout,
+  // whichever is first. Callers should treat the timeout as "best
+  // effort" — any client that didn't ACK will have to fall back to the
+  // unplanned-disconnect path, which is why the deadman recovery in
+  // `recoverNoHost` is also needed.
+  private async broadcastHostLeavingAndWait(nextHostId: string | null): Promise<void> {
+    const msg: Message = { type: 'HOST_LEAVING', payload: { nextHostId } };
+    const pending: Array<Promise<void>> = [];
+
+    this.connections.forEach((conn) => {
+      if (!conn.open) return;
+      // Per-connection ACK waiter. Attaches a transient data listener
+      // that resolves on HOST_LEAVING_ACK; self-cleans on resolve or
+      // timeout so we don't leave orphan listeners on the DataConnection.
+      const waiter = new Promise<void>((resolve) => {
+        let settled = false;
+        const onData = (raw: unknown) => {
+          const data = raw as Message;
+          if (data?.type === 'HOST_LEAVING_ACK') {
+            if (settled) return;
+            settled = true;
+            try {
+              conn.off('data', onData);
+            } catch {
+              /* ignore */
+            }
+            resolve();
+          }
+        };
+        conn.on('data', onData);
+        setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          try {
+            conn.off('data', onData);
+          } catch {
+            /* ignore */
+          }
+          console.warn('[peerManager] HOST_LEAVING_ACK timeout for', conn.peer);
+          resolve();
+        }, HOST_LEAVING_ACK_TIMEOUT_MS);
+      });
+      pending.push(waiter);
+
+      try {
+        conn.send(msg);
+      } catch (err) {
+        console.warn('[peerManager] HOST_LEAVING send failed for', conn.peer, err);
+      }
+    });
+
+    if (pending.length === 0) return;
+    await Promise.all(pending);
+    // Small settle so the underlying OS buffer can flush even after SCTP
+    // acks the ACK message itself. Belt-and-braces against tight races.
+    await new Promise((r) => setTimeout(r, HOST_LEAVING_SETTLE_MS));
+  }
+
   // Manual host transfer. Reuses the HOST_LEAVING flow — new host's client
   // logic (selfPromoteHost) is identical to graceful leave. Difference: the
   // demoting host stays in the room as a client, direct-connecting to the
@@ -1020,17 +1175,11 @@ class PeerManager {
     const roomId = state.roomId;
     if (!newHost || !roomId) return;
 
-    // Announce successor to every client BEFORE tearing down host role.
-    const msg: Message = {
-      type: 'HOST_LEAVING',
-      payload: { nextHostId: newHostId },
-    };
-    this.connections.forEach((conn) => {
-      if (conn.open) conn.send(msg);
-    });
-
-    // Let the data channel flush before the role change.
-    await new Promise((r) => setTimeout(r, 50));
+    // Announce successor to every client and WAIT until each has ack'd
+    // (or the per-connection timeout fires). This is the critical fix
+    // for 4+ player cross-network transfers where the old 50 ms flush
+    // couldn't outrun real-world RTT.
+    await this.broadcastHostLeavingAndWait(newHostId);
 
     // Demote: stop hosting but KEEP our current peer alive so we can
     // immediately act as a client connecting to the new host. If our peer
@@ -1129,20 +1278,15 @@ class PeerManager {
         .filter((p) => p.id !== state.hostId);
       const nextHostId = candidates[0]?.id ?? null;
 
-      const msg: Message = {
-        type: 'HOST_LEAVING',
-        payload: { nextHostId },
-      };
-      this.connections.forEach((conn) => {
-        if (conn.open) conn.send(msg);
-      });
-
-      // Small defer so the data-channel send queue flushes before destroy
-      // tears the peer down. 50 ms is imperceptible to the user.
-      setTimeout(() => {
+      // Fire the ACK-gated broadcast in the background — the UI has
+      // already flipped to Home via leaveRoom(), so we don't need to
+      // block on the teardown. The important thing is that destroy()
+      // doesn't run until clients have acknowledged (or the per-
+      // connection timeout fires).
+      void this.broadcastHostLeavingAndWait(nextHostId).finally(() => {
         this.destroy();
         this.isHost = false;
-      }, 50);
+      });
       return;
     }
 
