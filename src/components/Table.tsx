@@ -76,11 +76,11 @@ function PlayerSeat({
 
       <div className="flex items-center gap-1.5 text-sm">
         {isHost && <Crown className="w-3.5 h-3.5 text-yellow-500" />}
-        <span className="font-medium truncate max-w-[8rem]" title={player.name}>
+        <span className="font-medium truncate max-w-[8rem] text-emerald-50" title={player.name}>
           {player.name}
         </span>
         {isMe && (
-          <span className="text-[10px] bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 rounded text-gray-600 dark:text-gray-300 uppercase tracking-wider">
+          <span className="text-[10px] bg-emerald-100/90 dark:bg-gray-700 px-1.5 py-0.5 rounded text-emerald-900 dark:text-gray-300 uppercase tracking-wider">
             {t('table.you')}
           </span>
         )}
