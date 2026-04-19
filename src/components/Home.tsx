@@ -48,7 +48,7 @@ function NameInput({
   );
 }
 
-function CreateForm({ playerName, onNameChange }: { playerName: string; onNameChange: (v: string) => void }) {
+function CreateForm({ playerName }: { playerName: string }) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
 
@@ -69,18 +69,15 @@ function CreateForm({ playerName, onNameChange }: { playerName: string; onNameCh
   };
 
   return (
-    <div className="space-y-5">
-      <NameInput value={playerName} onChange={onNameChange} autoFocus />
-      <button
-        data-slot="home-create"
-        onClick={handleCreate}
-        disabled={!playerName.trim() || busy}
-        className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold p-3.5 rounded-lg transition flex items-center justify-center gap-2 shadow-md"
-      >
-        <Plus className="w-5 h-5" />
-        {busy ? t('home.creating') : t('home.createRoom')}
-      </button>
-    </div>
+    <button
+      data-slot="home-create"
+      onClick={handleCreate}
+      disabled={!playerName.trim() || busy}
+      className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold p-3.5 rounded-lg transition flex items-center justify-center gap-2 shadow-md"
+    >
+      <Plus className="w-5 h-5" />
+      {busy ? t('home.creating') : t('home.createRoom')}
+    </button>
   );
 }
 
@@ -95,11 +92,9 @@ type JoinUiState =
 
 function JoinForm({
   playerName,
-  onNameChange,
   initialRoomId,
 }: {
   playerName: string;
-  onNameChange: (v: string) => void;
   initialRoomId: string;
 }) {
   const { t } = useTranslation();
@@ -246,7 +241,6 @@ function JoinForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      <NameInput value={playerName} onChange={onNameChange} autoFocus={!initialRoomId} />
       <div>
         <label className="block text-sm font-medium mb-2">{t('home.roomIdLabel')}</label>
         <input
@@ -259,6 +253,7 @@ function JoinForm({
           autoCapitalize="characters"
           autoComplete="off"
           spellCheck={false}
+          autoFocus={!initialRoomId}
           className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 outline-none font-mono tracking-wider"
         />
       </div>
@@ -305,11 +300,10 @@ export default function Home() {
                 components={{ b: <span className="font-mono font-bold" /> }}
               />
             </p>
-            <JoinForm
-              playerName={playerName}
-              onNameChange={setPlayerName}
-              initialRoomId={roomFromUrl}
-            />
+            <div className="space-y-5">
+              <NameInput value={playerName} onChange={setPlayerName} />
+              <JoinForm playerName={playerName} initialRoomId={roomFromUrl} />
+            </div>
             <button
               data-slot="home-not-this-room"
               onClick={clearRoomFromUrl}
@@ -324,7 +318,10 @@ export default function Home() {
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
               {t('home.startSubtitle')}
             </p>
-            <CreateForm playerName={playerName} onNameChange={setPlayerName} />
+            <div className="space-y-5">
+              <NameInput value={playerName} onChange={setPlayerName} autoFocus />
+              <CreateForm playerName={playerName} />
+            </div>
 
             <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
               <button
@@ -339,11 +336,7 @@ export default function Home() {
               </button>
               {showJoinFallback && (
                 <div className="mt-4">
-                  <JoinForm
-                    playerName={playerName}
-                    onNameChange={setPlayerName}
-                    initialRoomId=""
-                  />
+                  <JoinForm playerName={playerName} initialRoomId="" />
                 </div>
               )}
             </div>

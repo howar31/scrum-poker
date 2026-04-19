@@ -181,7 +181,7 @@ While `roomId` is set, `App.tsx` installs a `beforeunload` listener that trigger
 
 - With `?room=<id>`: "You're invited" — Join form only, Room ID prefilled. A subtle link offers "Create a new one instead" (clears the URL param and reloads).
 - Without `?room=`: "Start a session" — Create form only. A collapsed disclosure below opens a Join form for the rare "someone dictated a Room ID to me" case.
-- Both branches share `NameInput` and subcomponents `CreateForm` / `JoinForm`.
+- **`NameInput` lives at the `Home` parent level** (rendered once above the form in either branch), so the identity field appears exactly once even when the Join fallback is expanded. `CreateForm` is just the Create button; `JoinForm` is Room ID + Join button (with its cancellable retry progress UI). Both subcomponents receive `playerName` as a read-only prop for disable-state checks; the single `NameInput` writes back to the Zustand store via `setPlayerName`.
 
 ### 9. Other UI
 
