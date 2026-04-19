@@ -15,7 +15,7 @@
     "statusDetail": {
       "connected": "你在房間中連線正常。",
       "reconnecting": "正在重新建立連線,既有資料可能仍可傳輸。",
-      "disconnected": "連線中斷。若持續無法恢復,請重新整理或開新房間。"
+      "disconnected": "連線中斷。若未恢復,請從邀請連結重新加入,或建立新房間。"
     },
     "disableAnimations": "關閉動畫",
     "enableAnimations": "開啟動畫",
@@ -132,7 +132,11 @@
     "arcHint": " (偵測到 Arc:即使關閉 arc://flags 的「Anonymize local IPs exposed to WebRTC」,Arc 仍可能和 Chrome 無法建立 WebRTC 連線;建議改用 Chrome、Firefox 或 Safari,或至少不要當 Host。)",
     "closedBeforeJoining": "Host 在加入前關閉了連線。",
     "peerInitFailed": "PeerJS 初始化失敗",
-    "peerError": "連線錯誤",
+    "peerError": "連線出現問題,若未自動恢復請重新加入房間。",
+    "signalingLost": "連線暫時中斷,重新連線中...",
+    "sslUnavailable": "安全連線不可用。請檢查網路或換個瀏覽器。",
+    "browserIncompatible": "你的瀏覽器不支援即時連線。請改用 Chrome、Firefox、Safari 或 Edge。",
+    "webrtc": "連線出問題,請重新加入房間。",
     "kicked": "已被房主踢出房間"
   }
 }

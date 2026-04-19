@@ -15,7 +15,7 @@
     "statusDetail": {
       "connected": "You are live in the room.",
       "reconnecting": "Re-establishing connection — existing data may still flow.",
-      "disconnected": "Lost connection. Refresh or create a new room if this persists."
+      "disconnected": "Lost connection. If it doesn't recover, rejoin via the invite link or create a new room."
     },
     "disableAnimations": "Disable animations",
     "enableAnimations": "Enable animations",
@@ -133,7 +133,11 @@
     "arcHint": " (Arc detected: even with arc://flags \"Anonymize local IPs exposed to WebRTC\" Disabled, Arc may still fail to reach Chrome peers. Prefer Chrome / Firefox / Safari, or at least avoid taking the Host role.)",
     "closedBeforeJoining": "Connection closed by host before joining.",
     "peerInitFailed": "Failed to initialize PeerJS",
-    "peerError": "Peer error",
+    "peerError": "Connection issue. Rejoin the room if it doesn't recover.",
+    "signalingLost": "Connection hiccup — reconnecting...",
+    "sslUnavailable": "Secure connection isn't available. Check your network or try a different browser.",
+    "browserIncompatible": "Your browser doesn't support real-time connections. Try Chrome, Firefox, Safari, or Edge.",
+    "webrtc": "Connection problem. Try rejoining the room.",
     "kicked": "Removed from the room by the host"
   }
 }

@@ -129,6 +129,41 @@ function isUnavailableId(err: unknown): boolean {
 }
 
 /**
+ * Translate a PeerJS error into a user-facing i18n message and a flag
+ * whether to surface it as a toast. PeerJS's raw messages are English-
+ * only AND mention "server" (its signaling broker), which breaks both
+ * our i18n contract and the Serverless brand promise. Everything that
+ * might reach the UI routes through here; the raw `err.message` goes
+ * to `console.error` only (for developer debugging).
+ */
+function humanizePeerError(err: { type?: string; message?: string }): {
+  toast: boolean;
+  message: string;
+} {
+  switch (err.type) {
+    case 'network':
+    case 'server-error':
+    case 'socket-error':
+    case 'socket-closed':
+      return { toast: true, message: i18n.t('errors.signalingLost') };
+    case 'ssl-unavailable':
+      return { toast: true, message: i18n.t('errors.sslUnavailable') };
+    case 'browser-incompatible':
+      return { toast: true, message: i18n.t('errors.browserIncompatible') };
+    case 'webrtc':
+      return { toast: true, message: i18n.t('errors.webrtc') };
+    // Expected internal errors handled by the migration / retry loops;
+    // no need to alarm the user with a toast.
+    case 'unavailable-id':
+    case 'peer-unavailable':
+    case 'disconnected':
+      return { toast: false, message: i18n.t('errors.peerError') };
+    default:
+      return { toast: true, message: i18n.t('errors.peerError') };
+  }
+}
+
+/**
  * PeerManager
  * -----------
  * A 5-state finite state machine over PeerJS. Exactly one mechanism decides
@@ -234,6 +269,7 @@ class PeerManager {
 
       peer.on('error', (err) => {
         console.error('[peerManager] peer error:', err.type, err.message);
+        const humanized = humanizePeerError(err);
         if (!settled) {
           settled = true;
           clearTimeout(timer);
@@ -242,12 +278,25 @@ class PeerManager {
           } catch {
             /* ignore */
           }
-          reject(err);
+          // Preserve err.type so callers (runMigration, joinRoomWithRetry)
+          // can still branch via isUnavailableId / isPeerUnavailable on
+          // the rejected error. The message is already translated so if
+          // it bubbles up to Home.tsx's toast, users never see the raw
+          // PeerJS English.
+          const e = new Error(humanized.message);
+          (e as Error & { type?: string }).type = err.type;
+          reject(e);
           return;
         }
-        // Post-open errors surface as toasts (usually stale signaling events
-        // after a blip). Don't persist — they auto-dismiss.
-        usePokerStore.getState().pushToast({ message: err.message, variant: 'error' });
+        // Post-open error. Some types are expected internal signals
+        // handled elsewhere (e.g. unavailable-id during ELECTING race) —
+        // suppress the toast for those.
+        if (humanized.toast) {
+          usePokerStore.getState().pushToast({
+            message: humanized.message,
+            variant: 'error',
+          });
+        }
       });
 
       peer.on('disconnected', () => {
@@ -501,7 +550,8 @@ class PeerManager {
 
       const onPeerError = (err: { type?: string; message?: string }) => {
         console.error('[peerManager] joinAsClient peer error:', err.type, err.message);
-        const e = new Error(err.message ?? i18n.t('errors.peerError'));
+        const humanized = humanizePeerError(err);
+        const e = new Error(humanized.message);
         (e as Error & { type?: string }).type = err.type;
         settle(() => reject(e));
       };
