@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#4338ca"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Full-bleed background; maskable-safe (content fits within inner 80%) -->
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+
+  <!-- Ghost card (subtle chaperone) -->
+  <g transform="rotate(15 512 512) translate(60 -10)" opacity="0.28">
+    <rect x="296" y="232" width="432" height="560" rx="52" fill="white"/>
+  </g>
+
+  <!-- Main card (white face, indigo "5") -->
+  <g transform="rotate(-8 512 512)">
+    <rect x="272" y="202" width="480" height="620" rx="56" fill="white"/>
+    <text
+      x="512" y="640"
+      font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+      font-size="360" font-weight="900"
+      fill="#4338ca"
+      text-anchor="middle"
+    >5</text>
+  </g>
+</svg>

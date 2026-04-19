@@ -9,6 +9,7 @@ See `SPEC.md` for detailed architecture, state management, and P2P implementatio
 - **Dev**: `npm run dev`
 - **Build**: `npm run build`
 - **Lint**: `npm run lint`
+- **Regenerate PWA icons**: `npm run icons` (Puppeteer rasterises `public/icon.svg` → `apple-touch-icon.png` / `icon-192.png` / `icon-512.png`; output committed, production build doesn't need Puppeteer)
 - **E2E driver**: `npm run e2e -- --help` (browser automation via `scripts/e2e.js`, thin CLI over `scripts/e2e/modes/*.js` with shared utilities in `scripts/e2e/helpers.js`). 24 modes, each with its own `npm run e2e:<mode>` shortcut. **Fastest way to run the full suite**: `VITE_E2E=1 npm run dev` + `npm run e2e:all` (spawns every assertion mode as a child process, aggregates pass/fail, exits 0 iff every mode passed). Individual modes: `host`/`swarm`/`observe` (diagnostic, no assertions), `check` (exit-code CI smoke), and 20 assertion modes that print a final `Result:` line (`transfer`, `crash`, `kick`, `vote`, `refresh`, `kick-window`, `late-joiner`, `deadman`, `state-persist` (alias `e2e:state`), `disarm`, `join-ux`, `settings`, `copy-toast`, `solo-leave`, `panel-ux`, `split-brain`, `crash-mid-transfer`, `election-race`, `partition`). Assertion modes that depend on the zustand store require `VITE_E2E=1` on the dev server (exposes `window.__POKER_STATE__` — production builds never ship it). Full per-mode semantics in `SPEC.md` → "End-to-End Harness".
 
 ## Conventions

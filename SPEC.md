@@ -271,6 +271,13 @@ When adding a new button or input that exercises app state, give it a `data-slot
 
 ## File Structure
 
+- `public/` — static assets copied verbatim into `dist/`:
+  - `favicon.svg` — tab icon (small-size card design, works in any browser tab)
+  - `icon.svg` — full-bleed 1024×1024 source for PWA / iOS icons (different design: gradient background + centered white card with indigo "5", maskable-safe zone)
+  - `apple-touch-icon.png` (180×180) — iOS Safari "Add to Home Screen" icon; PNG is required because iOS ignores SVG favicons for this surface
+  - `icon-192.png`, `icon-512.png` — PWA manifest icons (Android Chrome install + splash)
+  - `manifest.webmanifest` — PWA manifest (`display: standalone`, theme-color, icons)
+- `scripts/generate-icons.js` — Puppeteer rasteriser that regenerates the three PNGs from `public/icon.svg`. Run via `npm run icons`. Output is committed so production builds don't need Puppeteer.
 - `src/components/`: React UI components.
   - `Home.tsx` — URL-driven Create vs Join entry
   - `Room.tsx` — Table + Statistics layout, bottom hand rail (room-level chrome lives in `App.tsx` header)

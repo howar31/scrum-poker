@@ -53,6 +53,7 @@ Open the [live link](https://lab.howar31.com/scrum-poker/) in any modern browser
 - **Table-style Layout + Live Statistics.** Every played card is laid out on a felt table so votes are visible at a glance, even with 8+ players. A Statistics panel shows Average, Min, Max, Consensus badge, and vote distribution the moment cards are revealed (`?` and `☕` excluded from the average).
 - **Rich Card Effects.** Pointer-tracked 3D tilt, crystalline glass-style card back, and a physical "pick up → flip → place down" reveal animation. Hand cards lift on hover; played cards lean at natural angles on the table. Honored by the "Reduce Motion" toggle.
 - **Arc Browser Warning.** Arc's WebRTC stack doesn't play well with other browsers; the app detects Arc and surfaces actionable guidance on Home (including the recommendation to let someone else be Host). See [Known Limitations](#known-limitations).
+- **Installable PWA.** Ships `manifest.webmanifest` + `apple-touch-icon` so iOS Safari and Android Chrome can Add-to-Home-Screen with a proper icon and open in `standalone` display (no browser chrome, looks like a native app).
 - **i18n, theming, accessibility, responsive.** English + Traditional Chinese (auto-detected, persisted). Dark / Light theme. "Reduce Motion" kill-switch for animations. Fully responsive mobile + desktop.
 
 ## Development
@@ -80,6 +81,16 @@ npm run build
 ```bash
 npm run lint
 ```
+
+### Regenerate PWA icons
+
+After editing `public/icon.svg`, rasterize the PNG variants (`apple-touch-icon.png`, `icon-192.png`, `icon-512.png`) via a one-off Puppeteer script:
+
+```bash
+npm run icons
+```
+
+Output is committed so production builds don't need Puppeteer.
 
 ### End-to-end browser automation
 

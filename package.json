@@ -29,6 +29,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "icons": "node scripts/generate-icons.js",
     "e2e": "node scripts/e2e.js",
     "e2e:host": "node scripts/e2e.js --mode host",
     "e2e:swarm": "node scripts/e2e.js --mode swarm",
