@@ -37,6 +37,8 @@ Open the [live link](https://lab.howar31.com/scrum-poker/) in any modern browser
 **Leave**
 - Menu (top right) → **Leave room** → click again to confirm. If you were the host, the room automatically picks a new one.
 
+**Add to Home Screen** (optional): on iOS Safari, tap Share → *Add to Home Screen*; on Android Chrome, use the browser menu → *Install app*. It opens as a standalone app with no browser chrome, like a native client.
+
 **Browser compatibility note**: if you use **Arc Browser**, the app will warn you on Home and advise not to take the Host role. See [Known Limitations](#known-limitations) below.
 
 ## Features
@@ -44,6 +46,7 @@ Open the [live link](https://lab.howar31.com/scrum-poker/) in any modern browser
 - **Zero-Split-Brain Host Migration.** When the host leaves or crashes, exactly one client becomes the new host — *structurally* guaranteed, not by convention. The PeerJS broker's one-peer-per-ID constraint is the single arbiter: clients race to open the room's well-known ID, the broker hands it to one winner, every other caller becomes a follower. Every message carries a monotonic `epoch` so stale broadcasts from a previous host can never overwrite fresh state. If the designated successor crashes mid-handoff, non-electors unlock a rank-staggered fallback (rank 0 = original host usually) so the room survives. Graceful transfers settle in ~5–10 s; dirty crashes up to ~60 s. A 20 s ghost-sweep after migration keeps the player list accurate when someone doesn't make it back. Full FSM + protocol in [`SPEC.md`](SPEC.md).
 - **Regression-Locked P2P Testing.** 24 Puppeteer e2e modes — every past P2P race condition has a dedicated test that reproduces it headless in CI: `split-brain` (5-client cross-network strand), `crash-mid-transfer`, `election-race`, `partition`, `deadman`, `kick-window`, `late-joiner`, and more. `npm run e2e:all` cross-checks the zustand store via a test-only hook and exits non-zero on any regression. See the [Modes table](#modes) below.
 - **Reconnect-aware Identity.** `playerId` persists across page reloads, so refreshing is a reconnect (same seat, same `joinedAt` rank for host-election ordering), not a duplicate join. An 8 s application-layer watchdog on top of a 2 s STATE heartbeat detects a dead host faster than WebRTC's native ICE timeout (15–30 s) while still tolerating brief network blips without evicting anyone. If the WebSocket to the PeerJS broker drops (tab backgrounded), the app auto-reconnects behind the scenes.
+- **Installable PWA.** Ships a full Web App Manifest + `apple-touch-icon` set, so iOS Safari and Android Chrome can Add-to-Home-Screen with a proper icon and open the app in `standalone` display — no browser chrome, looks like a native client. Useful for recurring estimation sessions; one tap instead of typing the URL.
 - **Serverless & P2P.** WebRTC via PeerJS. No backend, no database, no signup. Room state lives in participants' browsers and evaporates when the last person leaves.
 - **Resilient Joins.** A new joiner arriving mid-migration gets a cancellable retry form with a spinner and a progress message that distinguishes "can't find this room yet" from "host isn't responding". After 30 s, a non-blocking banner offers Dismiss (keep retrying) or Give up. Walk away, come back, or bail out at any time.
 - **Honest Connection Status.** A three-state dot in the header — green live, yellow (pulsing) reconnecting, red (pulsing) disconnected. Desktop shows the label inline; mobile stays icon-only and a tap toasts the full explanation.
@@ -53,7 +56,6 @@ Open the [live link](https://lab.howar31.com/scrum-poker/) in any modern browser
 - **Table-style Layout + Live Statistics.** Every played card is laid out on a felt table so votes are visible at a glance, even with 8+ players. A Statistics panel shows Average, Min, Max, Consensus badge, and vote distribution the moment cards are revealed (`?` and `☕` excluded from the average).
 - **Rich Card Effects.** Pointer-tracked 3D tilt, crystalline glass-style card back, and a physical "pick up → flip → place down" reveal animation. Hand cards lift on hover; played cards lean at natural angles on the table. Honored by the "Reduce Motion" toggle.
 - **Arc Browser Warning.** Arc's WebRTC stack doesn't play well with other browsers; the app detects Arc and surfaces actionable guidance on Home (including the recommendation to let someone else be Host). See [Known Limitations](#known-limitations).
-- **Installable PWA.** Ships `manifest.webmanifest` + `apple-touch-icon` so iOS Safari and Android Chrome can Add-to-Home-Screen with a proper icon and open in `standalone` display (no browser chrome, looks like a native app).
 - **i18n, theming, accessibility, responsive.** English + Traditional Chinese (auto-detected, persisted). Dark / Light theme. "Reduce Motion" kill-switch for animations. Fully responsive mobile + desktop.
 
 ## Development
