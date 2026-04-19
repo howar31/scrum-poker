@@ -279,6 +279,8 @@ When adding a new button or input that exercises app state, give it a `data-slot
   - `icon-192.png`, `icon-512.png` — PWA manifest icons (Android Chrome install + splash)
   - `manifest.webmanifest` — PWA manifest (`display: standalone`, theme-color, icons)
 - `scripts/generate-icons.js` — Puppeteer rasteriser that regenerates the three PNGs from `public/icon.svg`. Run via `npm run icons`. Output is committed so production builds don't need Puppeteer.
+- `scripts/generate-screenshots.js` — Puppeteer driver that regenerates the `docs/screenshots/` showcase (home / room-voting / players-panel / mobile-room / mobile-panel + animated `hero.gif`). Reuses the e2e `helpers.js` to spawn a host + bots on localhost:5173, toggles theme/lang via the `menu-*` data-slots, and for the hero records a two-round (disagreement → consensus) scene via `page.screencast` then pipes the WebM through ffmpeg's palette filter (`fps=15`, `palettegen max_colors=128`, `paletteuse dither=bayer`). Mobile viewport is `428×926 @ DPR 1.5` → output `642×1389` matches the user-supplied compressed `pwa.png` byte-for-byte so the README 3-column table renders at uniform heights. Run via `npm run screenshots`.
+- `docs/screenshots/` — README showcase assets (7 files): `hero.gif` (animated two-round flow, ~2 MB), three desktop stills (`home.png` light/en, `room-voting.png` dark/zh-TW, `players-panel.png` dark/en), two mobile stills (`mobile-room.png`, `mobile-panel.png`), and `pwa.png` (real iPhone home-screen shot of the installed PWA, compressed via `sips -Z 1389`).
 - `src/components/`: React UI components.
   - `Home.tsx` — URL-driven Create vs Join entry
   - `Room.tsx` — Table + Statistics layout, bottom hand rail (room-level chrome lives in `App.tsx` header)

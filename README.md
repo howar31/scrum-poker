@@ -10,6 +10,10 @@
 
 🔗 **Live**: [lab.howar31.com/scrum-poker/](https://lab.howar31.com/scrum-poker/)
 
+<p align="center">
+  <img src="docs/screenshots/hero.gif" alt="Scrum Poker — six players vote with a spread, reveal, reset, and re-vote to consensus at 5" />
+</p>
+
 Built with React, Vite, TailwindCSS, and PeerJS. State lives in the participants' browsers and evaporates when the last person leaves — there is no database to store it in.
 
 ## Quick Start
@@ -40,6 +44,20 @@ Open the [live link](https://lab.howar31.com/scrum-poker/) in any modern browser
 **Add to Home Screen** (optional): on iOS Safari, tap Share → *Add to Home Screen*; on Android Chrome, use the browser menu → *Install app*. It opens as a standalone app with no browser chrome, like a native client.
 
 **Browser compatibility note**: if you use **Arc Browser**, the app will warn you on Home and advise not to take the Host role. See [Known Limitations](#known-limitations) below.
+
+## Screenshots
+
+### Desktop
+
+| Home (Light) | Voting (Traditional Chinese) | Players panel |
+| :---: | :---: | :---: |
+| ![Home page, light theme](docs/screenshots/home.png) | ![Voting in progress, Traditional Chinese UI](docs/screenshots/room-voting.png) | ![Players panel with moderator controls](docs/screenshots/players-panel.png) |
+
+### Mobile
+
+| Room | Bottom sheet | PWA on iOS |
+| :---: | :---: | :---: |
+| ![Mobile portrait voting table](docs/screenshots/mobile-room.png) | ![Mobile bottom-sheet players panel](docs/screenshots/mobile-panel.png) | ![Scrum Poker installed on an iPhone home screen](docs/screenshots/pwa.png) |
 
 ## Features
 
@@ -93,6 +111,17 @@ npm run icons
 ```
 
 Output is committed so production builds don't need Puppeteer.
+
+### Regenerate README screenshots
+
+The screenshot showcase under `docs/screenshots/` (desktop / mobile stills + the animated `hero.gif`) is produced by a Puppeteer driver that spawns a host + several bots against a running dev server, drives the UI into each target state (including two rounds for the hero — disagreement → consensus), and pipes the captured WebM through `ffmpeg`'s palette filter into a compact GIF:
+
+```bash
+npm run dev           # in one shell
+npm run screenshots   # in another; needs ffmpeg on PATH
+```
+
+The mobile captures are intentionally sized to match the user-supplied `pwa.png` (642×1389) so the README 3-column mobile gallery aligns at identical heights. `hero.gif` typically lands around 2 MB.
 
 ### End-to-end browser automation
 

@@ -30,6 +30,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "icons": "node scripts/generate-icons.js",
+    "screenshots": "node scripts/generate-screenshots.js",
     "e2e": "node scripts/e2e.js",
     "e2e:host": "node scripts/e2e.js --mode host",
     "e2e:swarm": "node scripts/e2e.js --mode swarm",
