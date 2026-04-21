@@ -128,170 +128,172 @@ function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[var(--color-background-light)] dark:bg-[var(--color-background-dark)] text-[var(--color-text-light)] dark:text-[var(--color-text-dark)] transition-colors duration-200">
-      <header className="sticky top-0 z-30 bg-[var(--color-background-light)] dark:bg-[var(--color-background-dark)] px-4 py-3 flex justify-between items-center gap-3 border-b border-gray-200 dark:border-gray-800">
-        <div className="flex items-center gap-2 md:gap-4 min-w-0 flex-1">
-          <h1 className="text-xl md:text-2xl font-bold bg-gradient-to-r from-blue-500 to-indigo-600 bg-clip-text text-transparent flex-shrink-0">
-            {t('app.title')}
-          </h1>
+      <header className="sticky top-0 z-30 bg-[var(--color-background-light)] dark:bg-[var(--color-background-dark)] px-4 py-3 border-b border-gray-200 dark:border-gray-800">
+        <div className="max-w-6xl mx-auto flex justify-between items-center gap-3">
+          <div className="flex items-center gap-2 md:gap-4 min-w-0 flex-1">
+            <h1 className="text-xl md:text-2xl font-bold bg-gradient-to-r from-blue-500 to-indigo-600 bg-clip-text text-transparent flex-shrink-0">
+              {t('app.title')}
+            </h1>
 
-          {roomId && (
-            <div className="flex items-center gap-1 min-w-0">
-              <button
-                data-slot="copy-room-id"
-                onClick={handleCopyId}
-                className="px-2.5 py-1.5 rounded-md font-mono font-bold text-sm md:text-base tracking-wider bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition"
-                title={t('app.copyRoomId')}
-              >
-                {roomId}
-              </button>
-              <button
-                data-slot="copy-invite-link"
-                onClick={handleCopyLink}
-                className="p-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 transition"
-                title={t('app.copyLink')}
-                aria-label={t('app.copyLink')}
-              >
-                <Link2 className="w-4 h-4" />
-              </button>
-              <button
-                data-slot="connection-status"
-                data-status={connectionStatus}
-                type="button"
-                onClick={() =>
-                  pushToast({
-                    message: `${t(`app.status.${connectionStatus}`)} — ${t(`app.statusDetail.${connectionStatus}`)}`,
-                    variant:
+            {roomId && (
+              <div className="flex items-center gap-1 min-w-0">
+                <button
+                  data-slot="copy-room-id"
+                  onClick={handleCopyId}
+                  className="px-2.5 py-1.5 rounded-md font-mono font-bold text-sm md:text-base tracking-wider bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition"
+                  title={t('app.copyRoomId')}
+                >
+                  {roomId}
+                </button>
+                <button
+                  data-slot="copy-invite-link"
+                  onClick={handleCopyLink}
+                  className="p-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 transition"
+                  title={t('app.copyLink')}
+                  aria-label={t('app.copyLink')}
+                >
+                  <Link2 className="w-4 h-4" />
+                </button>
+                <button
+                  data-slot="connection-status"
+                  data-status={connectionStatus}
+                  type="button"
+                  onClick={() =>
+                    pushToast({
+                      message: `${t(`app.status.${connectionStatus}`)} — ${t(`app.statusDetail.${connectionStatus}`)}`,
+                      variant:
+                        connectionStatus === 'connected'
+                          ? 'success'
+                          : connectionStatus === 'reconnecting'
+                            ? 'info'
+                            : 'warning',
+                    })
+                  }
+                  className="inline-flex items-center gap-1.5 ml-1 transition"
+                  title={`${t(`app.status.${connectionStatus}`)} — ${t(`app.statusDetail.${connectionStatus}`)}`}
+                  aria-label={t(`app.status.${connectionStatus}`)}
+                >
+                  <span
+                    className={`inline-block w-2.5 h-2.5 rounded-full ${
                       connectionStatus === 'connected'
-                        ? 'success'
+                        ? 'bg-green-500'
                         : connectionStatus === 'reconnecting'
-                          ? 'info'
-                          : 'warning',
-                  })
-                }
-                className="inline-flex items-center gap-1.5 ml-1 transition"
-                title={`${t(`app.status.${connectionStatus}`)} — ${t(`app.statusDetail.${connectionStatus}`)}`}
-                aria-label={t(`app.status.${connectionStatus}`)}
-              >
-                <span
-                  className={`inline-block w-2.5 h-2.5 rounded-full ${
-                    connectionStatus === 'connected'
-                      ? 'bg-green-500'
-                      : connectionStatus === 'reconnecting'
-                        ? 'bg-amber-400 animate-pulse'
-                        : 'bg-red-500 animate-pulse'
-                  }`}
-                />
-                <span className="hidden md:inline text-xs text-gray-600 dark:text-gray-300">
-                  {t(`app.status.${connectionStatus}`)}
-                </span>
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className="flex gap-1 items-center flex-shrink-0">
-          {roomId && (
-            <button
-              data-slot="players-pill"
-              onClick={() => setPlayersPanelOpen(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-sm font-medium transition"
-              aria-label={t('players.openPanel')}
-              title={t('players.openPanel')}
-            >
-              <Users className="w-4 h-4" />
-              <span className="hidden sm:inline">{t('players.title')}</span>
-              <span className="text-xs text-gray-500 dark:text-gray-400">{playerCount}</span>
-            </button>
-          )}
-          <div ref={menuRef} className="relative">
-            <button
-              data-slot="menu-trigger"
-              onClick={() => (menuOpen ? closeMenu() : setMenuOpen(true))}
-              className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition"
-              title={t('app.menu')}
-              aria-label={t('app.menu')}
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-            >
-              <MoreVertical className="w-5 h-5" />
-            </button>
-
-            {menuOpen && (
-              <div
-                role="menu"
-                className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-40"
-              >
-                <button
-                  data-slot="menu-language"
-                  role="menuitem"
-                  onClick={toggleLanguage}
-                  className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition"
-                >
-                  <span className="flex items-center gap-2">
-                    <Languages className="w-4 h-4" />
-                    {t('app.language')}
-                  </span>
-                  <span className="font-semibold text-xs text-gray-500 dark:text-gray-400">
-                    {currentLangLabel}
+                          ? 'bg-amber-400 animate-pulse'
+                          : 'bg-red-500 animate-pulse'
+                    }`}
+                  />
+                  <span className="hidden md:inline text-xs text-gray-600 dark:text-gray-300">
+                    {t(`app.status.${connectionStatus}`)}
                   </span>
                 </button>
-
-                <button
-                  data-slot="menu-animations"
-                  role="menuitem"
-                  onClick={() => setAnimationsEnabled(!animationsEnabled)}
-                  className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition"
-                >
-                  <span className="flex items-center gap-2">
-                    <Sparkles className={`w-4 h-4 ${!animationsEnabled ? 'opacity-40' : ''}`} />
-                    {t('app.animations')}
-                  </span>
-                  <span className="text-xs text-gray-500 dark:text-gray-400">
-                    {animationsEnabled ? t('app.on') : t('app.off')}
-                  </span>
-                </button>
-
-                <button
-                  data-slot="menu-theme"
-                  role="menuitem"
-                  onClick={toggleTheme}
-                  className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition"
-                >
-                  <span className="flex items-center gap-2">
-                    {theme === 'dark' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-                    {t('app.theme')}
-                  </span>
-                  <span className="text-xs text-gray-500 dark:text-gray-400">
-                    {theme === 'dark' ? t('app.dark') : t('app.light')}
-                  </span>
-                </button>
-
-                {roomId && (
-                  <>
-                    <div className="my-1 border-t border-gray-200 dark:border-gray-700" />
-                    <button
-                      data-slot="menu-leave"
-                      data-confirming={confirmingLeave}
-                      role="menuitem"
-                      onClick={handleLeave}
-                      className={`w-full flex items-center justify-between px-3 py-2 text-sm font-medium transition ${
-                        confirmingLeave
-                          ? 'bg-red-500 text-white hover:bg-red-600'
-                          : 'text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30'
-                      }`}
-                    >
-                      <span className="flex items-center gap-2">
-                        <LogOut className="w-4 h-4" />
-                        {t('app.leaveRoom')}
-                      </span>
-                      {confirmingLeave && (
-                        <span className="text-xs opacity-90">{t('app.leaveConfirm')}</span>
-                      )}
-                    </button>
-                  </>
-                )}
               </div>
             )}
+          </div>
+
+          <div className="flex gap-1 items-center flex-shrink-0">
+            {roomId && (
+              <button
+                data-slot="players-pill"
+                onClick={() => setPlayersPanelOpen(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-sm font-medium transition"
+                aria-label={t('players.openPanel')}
+                title={t('players.openPanel')}
+              >
+                <Users className="w-4 h-4" />
+                <span className="hidden sm:inline">{t('players.title')}</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">{playerCount}</span>
+              </button>
+            )}
+            <div ref={menuRef} className="relative">
+              <button
+                data-slot="menu-trigger"
+                onClick={() => (menuOpen ? closeMenu() : setMenuOpen(true))}
+                className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition"
+                title={t('app.menu')}
+                aria-label={t('app.menu')}
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+              >
+                <MoreVertical className="w-5 h-5" />
+              </button>
+
+              {menuOpen && (
+                <div
+                  role="menu"
+                  className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-40"
+                >
+                  <button
+                    data-slot="menu-language"
+                    role="menuitem"
+                    onClick={toggleLanguage}
+                    className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Languages className="w-4 h-4" />
+                      {t('app.language')}
+                    </span>
+                    <span className="font-semibold text-xs text-gray-500 dark:text-gray-400">
+                      {currentLangLabel}
+                    </span>
+                  </button>
+
+                  <button
+                    data-slot="menu-animations"
+                    role="menuitem"
+                    onClick={() => setAnimationsEnabled(!animationsEnabled)}
+                    className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Sparkles className={`w-4 h-4 ${!animationsEnabled ? 'opacity-40' : ''}`} />
+                      {t('app.animations')}
+                    </span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      {animationsEnabled ? t('app.on') : t('app.off')}
+                    </span>
+                  </button>
+
+                  <button
+                    data-slot="menu-theme"
+                    role="menuitem"
+                    onClick={toggleTheme}
+                    className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition"
+                  >
+                    <span className="flex items-center gap-2">
+                      {theme === 'dark' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+                      {t('app.theme')}
+                    </span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      {theme === 'dark' ? t('app.dark') : t('app.light')}
+                    </span>
+                  </button>
+
+                  {roomId && (
+                    <>
+                      <div className="my-1 border-t border-gray-200 dark:border-gray-700" />
+                      <button
+                        data-slot="menu-leave"
+                        data-confirming={confirmingLeave}
+                        role="menuitem"
+                        onClick={handleLeave}
+                        className={`w-full flex items-center justify-between px-3 py-2 text-sm font-medium transition ${
+                          confirmingLeave
+                            ? 'bg-red-500 text-white hover:bg-red-600'
+                            : 'text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2">
+                          <LogOut className="w-4 h-4" />
+                          {t('app.leaveRoom')}
+                        </span>
+                        {confirmingLeave && (
+                          <span className="text-xs opacity-90">{t('app.leaveConfirm')}</span>
+                        )}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>
