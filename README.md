@@ -78,6 +78,16 @@ Open the [live link](https://lab.howar31.com/scrum-poker/) in any modern browser
 
 ## Development
 
+### Prerequisites
+
+Node 22 (pinned via `.nvmrc`). With [nvm](https://github.com/nvm-sh/nvm) installed:
+
+```bash
+nvm use           # or `nvm install` if 22 isn't installed yet
+```
+
+Vite requires Node ≥ 20.19 / 22.12 — older versions crash at startup.
+
 ### Install Dependencies
 
 ```bash
