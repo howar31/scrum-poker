@@ -1,6 +1,6 @@
 # Scrum Poker
 
-[![Deploy](https://github.com/howar31/scrum-poker/actions/workflows/deploy.yml/badge.svg)](https://github.com/howar31/scrum-poker/actions/workflows/deploy.yml)
+[![Deploy](https://img.shields.io/github/actions/workflow/status/howar31/scrum-poker/deploy.yml?style=flat-square&label=deploy)](https://github.com/howar31/scrum-poker/actions/workflows/deploy.yml)
 [![License: MIT](https://img.shields.io/github/license/howar31/scrum-poker?color=blue&style=flat-square)](LICENSE)
 [![Last commit](https://img.shields.io/github/last-commit/howar31/scrum-poker?color=brightgreen&style=flat-square)](https://github.com/howar31/scrum-poker/commits/main)
 [![Commit activity](https://img.shields.io/github/commit-activity/m/howar31/scrum-poker?color=orange&style=flat-square)](https://github.com/howar31/scrum-poker/pulse)
