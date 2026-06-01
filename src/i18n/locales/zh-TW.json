@@ -10,11 +10,17 @@
     "status": {
       "connected": "已連線",
       "reconnecting": "連線中",
+      "reconnecting-broker": "連線中",
+      "reconnecting-ice": "連線中",
+      "reconnecting-relay": "已連線（中繼）",
       "disconnected": "已斷線"
     },
     "statusDetail": {
       "connected": "你在房間中連線正常。",
       "reconnecting": "正在重新建立連線,既有資料可能仍可傳輸。",
+      "reconnecting-broker": "與信令伺服器斷線—正在重試。已建立的 P2P 連線可能仍可傳輸。",
+      "reconnecting-ice": "網路切換或對端連線失敗—正在重新協商 ICE。",
+      "reconnecting-relay": "目前透過 TURN 中繼連線（房間內某人位於嚴格網路後方）。",
       "disconnected": "連線中斷。若未恢復,請從邀請連結重新加入,或建立新房間。"
     },
     "disableAnimations": "關閉動畫",

@@ -1,0 +1,16 @@
+name = "scrum-poker-turn"
+main = "index.ts"
+compatibility_date = "2025-12-01"
+
+# Secrets (set via `wrangler secret put`):
+#   TURN_KEY_ID         — Cloudflare Realtime TURN key ID
+#   TURN_KEY_API_TOKEN  — API token with TURN credential-generation scope
+#
+# Deploy:
+#   cd infra/turn-token-worker
+#   wrangler secret put TURN_KEY_ID
+#   wrangler secret put TURN_KEY_API_TOKEN
+#   wrangler deploy
+#
+# After deploy, set the printed URL as VITE_TURN_CF_TOKEN_URL in the
+# Scrum Poker build environment.

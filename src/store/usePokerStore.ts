@@ -37,7 +37,10 @@ export type MigrationPhase = 'idle' | 'reclaiming' | 'waiting';
 
 export type ConnectionStatus =
   | 'connected' // fully live: PeerJS signaling registered AND P2P working
-  | 'reconnecting' // signaling or P2P being re-established; existing data may still flow
+  | 'reconnecting' // generic amber state — kept for backward compat; new code should prefer the subtypes below
+  | 'reconnecting-broker' // PeerJS broker WebSocket dropped; existing P2P channels may still flow
+  | 'reconnecting-ice' // DataConnection ICE failed or network changed; restart in progress
+  | 'reconnecting-relay' // short pulse after switching to a TURN relay; clears back to 'connected' in 3 s
   | 'disconnected'; // all recovery paths failed
 
 interface PokerState extends RoomState {

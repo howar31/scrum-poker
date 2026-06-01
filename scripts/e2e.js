@@ -114,6 +114,23 @@ Assertion modes (scenarios that print a final 'Result:' line):
                 majority keeps operating, minority cleanly leaves room
                 rather than split-braining into a solo host.
 
+  network-flap  npm run e2e:network-flap  [SIGINT]
+                One client toggles Puppeteer offline mode for 4 s then
+                comes back. Asserts the client stays in the room, no
+                host migration is triggered (epoch stable), and the
+                store's connectionStatus pulses through a reconnecting-*
+                state before returning to 'connected'. Note: blocks HTTP
+                / WebSocket, NOT UDP — so this exercises the broker
+                reconnect + window 'online'/'offline' listeners rather
+                than real ICE failure.
+
+  ice-restart   npm run e2e:ice-restart   [SIGINT]
+                Calls the VITE_E2E-gated window.__POKER_PEER__.restartIce()
+                hook directly on a client. Asserts the DataConnection
+                survives, no host migration occurs, and the store
+                visibly transitions through 'reconnecting-ice' →
+                'connected'.
+
   all           npm run e2e:all           [EXITS 0/1]
                 Runs every assertion mode above sequentially as child
                 processes, parses each Result: line, exits 0 iff
@@ -200,6 +217,8 @@ const ALL_MODES = [
   'crash-mid-transfer',
   'election-race',
   'partition',
+  'network-flap',
+  'ice-restart',
   'all',
 ];
 
@@ -248,6 +267,8 @@ const MODE_TO_MODULE = {
   'crash-mid-transfer': './e2e/modes/crash-mid-transfer.js',
   'election-race': './e2e/modes/election-race.js',
   partition: './e2e/modes/partition.js',
+  'network-flap': './e2e/modes/network-flap.js',
+  'ice-restart': './e2e/modes/ice-restart.js',
   all: './e2e/modes/all.js',
 };
 

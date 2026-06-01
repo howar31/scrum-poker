@@ -37,6 +37,8 @@ const MODES = [
   { name: 'crash-mid-transfer', args: () => [] },
   { name: 'election-race', args: () => [] },
   { name: 'partition', args: () => [] },
+  { name: 'network-flap', args: () => [] },
+  { name: 'ice-restart', args: () => [] },
 ];
 
 // `check` mode calls process.exit itself. Every other mode hangs

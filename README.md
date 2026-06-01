@@ -64,7 +64,7 @@ Open the [live link](https://lab.howar31.com/scrum-poker/) in any modern browser
 ## Features
 
 - **Zero-Split-Brain Host Migration.** When the host leaves or crashes, exactly one client becomes the new host — *structurally* guaranteed, not by convention. The PeerJS broker's one-peer-per-ID constraint is the single arbiter: clients race to open the room's well-known ID, the broker hands it to one winner, every other caller becomes a follower. Every message carries a monotonic `epoch` so stale broadcasts from a previous host can never overwrite fresh state. If the designated successor crashes mid-handoff, non-electors unlock a rank-staggered fallback (rank 0 = original host usually) so the room survives. Graceful transfers settle in ~5–10 s; dirty crashes up to ~60 s. A 20 s ghost-sweep after migration keeps the player list accurate when someone doesn't make it back. Full FSM + protocol in [`SPEC.md`](SPEC.md).
-- **Regression-Locked P2P Testing.** 24 Puppeteer e2e modes — every past P2P race condition has a dedicated test that reproduces it headless in CI: `split-brain` (5-client cross-network strand), `crash-mid-transfer`, `election-race`, `partition`, `deadman`, `kick-window`, `late-joiner`, and more. `npm run e2e:all` cross-checks the zustand store via a test-only hook and exits non-zero on any regression. See the [Modes table](#modes) below.
+- **Regression-Locked P2P Testing.** 26 Puppeteer e2e modes — every past P2P race condition has a dedicated test that reproduces it headless in CI: `split-brain` (5-client cross-network strand), `crash-mid-transfer`, `election-race`, `partition`, `network-flap`, `ice-restart`, `deadman`, `kick-window`, `late-joiner`, and more. `npm run e2e:all` cross-checks the zustand store via a test-only hook and exits non-zero on any regression. See the [Modes table](#modes) below.
 - **Reconnect-aware Identity.** `playerId` persists across page reloads, so refreshing is a reconnect (same seat, same `joinedAt` rank for host-election ordering), not a duplicate join. An 8 s application-layer watchdog on top of a 2 s STATE heartbeat detects a dead host faster than WebRTC's native ICE timeout (15–30 s) while still tolerating brief network blips without evicting anyone. If the WebSocket to the PeerJS broker drops (tab backgrounded), the app auto-reconnects behind the scenes.
 - **Installable PWA.** Ships a full Web App Manifest + `apple-touch-icon` set, so iOS Safari and Android Chrome can Add-to-Home-Screen with a proper icon and open the app in `standalone` display — no browser chrome, looks like a native client. Useful for recurring estimation sessions; one tap instead of typing the URL.
 - **Serverless & P2P.** Every vote, message, and state update flows peer-to-peer via WebRTC. The only server in the loop is PeerJS's public signaling broker, which WebRTC requires to introduce browsers to each other at connection-setup time — it never sees your votes, names, or room state. Once peers are connected, the broker is out of the loop. Room data lives in participants' browsers and evaporates when the last person leaves.
@@ -181,6 +181,8 @@ Every mode has an `e2e:<name>` npm shortcut. The full flag list is in `npm run e
 | `crash-mid-transfer` | `e2e:crash-mid-transfer` | No (SIGINT) | Transfer to Tester02 then kill them before they elect. Rank-0 fallback recovers. | `hostRecovered=true allInRoom=true playerCountMatches=true`. |
 | `election-race` | `e2e:election-race` | No (SIGINT) | Force-close host, four clients race for the well-known ID. Broker arbitrates → exactly one winner. | `exactlyOneHost=true everyoneAgrees=true allInRoom=true playerCountMatches=true`. |
 | `partition` | `e2e:partition` | No (SIGINT) | Two clients leave simultaneously via menu. Majority stays together, no dangling players. | `majorityInRoom=true majorityCountMatches=true hostStill=true minorityLeftRoom=true`. |
+| `network-flap` | `e2e:network-flap` | No (SIGINT) | One client toggles Puppeteer offline mode for 4 s. Window `online`/`offline` listeners trigger a recovery without forcing a host migration. (Blocks HTTP / WebSocket, not UDP.) | `stayedInRoom=true noMigration=true playerCountStable=true recovered=true sawReconnecting=true`. |
+| `ice-restart` | `e2e:ice-restart` | No (SIGINT) | Invokes `window.__POKER_PEER__.restartIce()` directly. Asserts DataConnection survives and the store cycles through `reconnecting-ice` → `connected`. | `hookFired=true stayedInRoom=true noMigration=true playerCountStable=true recovered=true sawIceReconnecting=true`. |
 | `all` | `e2e:all` | **Yes (0/1)** | Runs every assertion mode as a child process, aggregates pass/fail. | Exit code 0. |
 
 Assertion-mode pass criterion: the final `Result: ...` line has every field `=true`. Any `=false` means a regression. `check` and `all` are the only modes with actual exit codes; for the others, grep stdout or use `e2e:all` to wrap them.
@@ -212,10 +214,32 @@ npm run e2e:observe -- --room ABC1234
 
 The production instance is at [lab.howar31.com/scrum-poker/](https://lab.howar31.com/scrum-poker/). It's auto-deployed to GitHub Pages on every push to `main` via `.github/workflows/deploy.yml`. To host your own copy: fork the repo, update the `homepage` in `package.json`, and enable GitHub Pages in the repo settings.
 
+## TURN configuration
+
+The default build uses **STUN-only** ICE (Google + Twilio public servers). This works for most home networks, but fails for peers behind symmetric NAT, corporate firewalls that block UDP, or browsers with aggressive WebRTC privacy settings (Arc, Brave). To cover those cases, you can plug in a TURN provider via environment variables. TURN is a fallback — direct peer-to-peer is always tried first, so configuring TURN doesn't increase your bandwidth use unless a peer pair genuinely can't connect directly.
+
+Two providers are supported in parallel; you can configure either or both, and ICE will pick whichever relay candidate succeeds first:
+
+| Provider | Free tier | Credit card | OSS-safe creds | Region |
+|---|---|---|---|---|
+| **Open Relay** (Metered.ca) | 20 GB / month | Not required | Yes — credentials are intentionally public | US only |
+| **Cloudflare TURN** | 1,000 GB / month (shared with Realtime SFU) | Required | Only via the bundled Worker (never ship the API key) | Global anycast |
+
+For a typical Scrum Poker session (~1 KB STATE every 2 s × N peers, only the relay-bound subset hitting TURN), 20 GB is enough for thousands of meetings.
+
+Setup:
+
+1. Copy `.env.example` to `.env.local` and uncomment the variables for whichever provider you choose.
+2. **Open Relay only**: sign up at [metered.ca/tools/openrelay](https://www.metered.ca/tools/openrelay/) and paste the username / credential.
+3. **Cloudflare**: deploy the bundled Worker at `infra/turn-token-worker/` (`wrangler deploy`), set `TURN_KEY_ID` / `TURN_KEY_API_TOKEN` as Worker secrets, and put the Worker URL in `VITE_TURN_CF_TOKEN_URL`. The Worker mints short-lived (4 h) credentials on demand so the API key never reaches the client.
+4. For GitHub Pages deployments, set the `VITE_TURN_*` values as repository secrets and reference them in the deploy workflow.
+
+If a TURN fetch fails at runtime (Worker outage, network blip), the app degrades silently to STUN + whichever provider succeeded — TURN is never on the critical path of joining a room.
+
 ## Known Limitations
 
 - **Depends on a third-party signaling broker.** WebRTC needs a signaling relay to bootstrap peer-to-peer connections; we use PeerJS's free public broker (`0.peerjs.com`). If the broker has an outage, **new** rooms can't be created and **new** joiners can't reach existing rooms; already-connected participants keep working over their direct WebRTC channel until someone disconnects. Self-hosting a [PeerServer](https://github.com/peers/peerjs-server) is straightforward if you need an uptime guarantee — the code makes no assumption about who runs the broker.
-- **No TURN server.** Peers behind symmetric NAT, corporate firewalls blocking UDP, or browsers with aggressive WebRTC privacy settings may fail to connect. A TURN relay would cover these cases at the cost of extra hosting infrastructure.
+- **No TURN by default.** STUN-only is the out-of-the-box configuration; peers behind symmetric NAT, corporate firewalls blocking UDP, or browsers with aggressive WebRTC privacy settings will fail to connect until you configure a TURN provider. See [TURN configuration](#turn-configuration) above.
 - **Arc Browser as Host is broken in practice.** Arc's WebRTC stack is not fully compatible with Chrome/Firefox peers: ICE negotiation gets stuck in `checking` indefinitely or flaps between `connected`/`disconnected`. This affects **both new joiners** arriving via invite link AND **existing clients** trying to reconnect after a host transfer. In real-world testing with 5 clients (2 Chrome, 2 Firefox, 1 Arc), any scenario where Arc holds the Host role consistently stranded the Chromes.
   - **Recommendation for Arc users**: don't take the Host role. That is — don't click "Create room", and don't accept being made Host via the players panel. Joining as a regular follower mostly works.
   - **Mitigation**: open `arc://flags`, search for *"Anonymize local IPs exposed to WebRTC"*, set it to **Disabled**, then restart Arc. This *reduces* but does **not fully eliminate** the problem — in our testing Chromes still failed to connect to an Arc Host with this flag disabled, just slightly less often.

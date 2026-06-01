@@ -348,6 +348,7 @@ export async function readStoreState(page) {
       playerId: s.playerId,
       playerName: s.playerName,
       isRevealed: s.isRevealed,
+      epoch: s.epoch,
       theme: s.theme,
       animationsEnabled: s.animationsEnabled,
       migrationPhase: s.migrationPhase,

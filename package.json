@@ -55,6 +55,8 @@
     "e2e:crash-mid-transfer": "node scripts/e2e.js --mode crash-mid-transfer",
     "e2e:election-race": "node scripts/e2e.js --mode election-race",
     "e2e:partition": "node scripts/e2e.js --mode partition",
+    "e2e:network-flap": "node scripts/e2e.js --mode network-flap",
+    "e2e:ice-restart": "node scripts/e2e.js --mode ice-restart",
     "e2e:all": "node scripts/e2e.js --mode all"
   },
   "dependencies": {

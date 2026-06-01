@@ -215,16 +215,147 @@ class PeerManager {
   // watchdog + conn.close triggering two paths at once.
   private migrating = false;
 
+  // Cache for short-lived Cloudflare TURN credentials minted by an external
+  // Worker. Refreshed when ttl - 60 s elapses.
+  private cfTokenCache: {
+    iceServers: RTCIceServer[];
+    expiresAt: number;
+  } | null = null;
+
+  // Last seen ICE state per DataConnection (keyed by conn.peer). Used by the
+  // relay-pulse cosmetic indicator and (in B3) by the flap-recovery tracker.
+  private iceLastState: Map<string, RTCIceConnectionState> = new Map();
+
+  // Single timeout handle for the 'reconnecting-relay' UI pulse; replaced on
+  // every fresh relay detection.
+  private relayPulseTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Debounce handle for restartIceAllConns; coalesces clustered triggers
+  // (e.g. 'online' event fires the same instant an 'iceconnectionstate=failed'
+  // hits).
+  private restartIceDebounce: ReturnType<typeof setTimeout> | null = null;
+
+  // Per-connection 'disconnected'-to-restart grace timers.
+  private iceDisconnectTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
+
+  // Per-connection 'failed' counter inside the rolling flap window. 2nd
+  // 'failed' inside FLAP_FAIL_WINDOW_MS triggers conn.close() so the
+  // watchdog / migration path takes over.
+  private iceFailCount: Map<string, number> = new Map();
+  private iceFailWindowTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
+
+  // Bound references so we can detach the same handlers we attached.
+  private networkListenersAttached = false;
+  private onlineHandler = (): void => this.handleOnline();
+  private offlineHandler = (): void => this.handleOffline();
+  private visibilityHandler = (): void => this.handleVisibility();
+  private pageshowHandler = (e: PageTransitionEvent): void => this.handlePageshow(e);
+
+  // VITE_DEBUG_WEBRTC stats poller. Started on room entry, stopped on
+  // destroyAll. Dumps selected candidate pair + bytes-sent/received every
+  // 10 s. Tree-shaken in production builds (env check at construction).
+  private debugStatsInterval: ReturnType<typeof setInterval> | null = null;
+
   // ─── Peer lifecycle ────────────────────────────────────────────────────────
 
-  private peerOpts() {
+  /**
+   * Build the iceServers list for new RTCPeerConnections. STUN is always
+   * present. TURN entries are appended only when the matching env vars are
+   * configured, so the default OSS bundle ships zero credentials and falls
+   * back to STUN-only behaviour.
+   *
+   * Two TURN providers are supported in parallel; ICE will pick whichever
+   * relay candidate succeeds first:
+   *   - Open Relay (Metered.ca): static credentials are intentionally public,
+   *     safe to embed via env vars at build time.
+   *   - Cloudflare TURN: short-lived credentials minted by an external Worker.
+   *     The Worker URL is the only thing in the client bundle; the Cloudflare
+   *     API key never leaves the Worker.
+   *
+   * Cloudflare fetch failures degrade silently to STUN + whatever else loaded —
+   * connection attempts must never block on a TURN provider being reachable.
+   */
+  private async buildIceServers(): Promise<RTCIceServer[]> {
+    const servers: RTCIceServer[] = [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:global.stun.twilio.com:3478' },
+    ];
+
+    const openrelayUrls = import.meta.env.VITE_TURN_OPENRELAY_URLS;
+    const openrelayUser = import.meta.env.VITE_TURN_OPENRELAY_USERNAME;
+    const openrelayCred = import.meta.env.VITE_TURN_OPENRELAY_CREDENTIAL;
+    if (openrelayUrls && openrelayUser && openrelayCred) {
+      const urls = String(openrelayUrls)
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (urls.length > 0) {
+        servers.push({
+          urls,
+          username: String(openrelayUser),
+          credential: String(openrelayCred),
+        });
+      }
+    }
+
+    const cfTokenUrl = import.meta.env.VITE_TURN_CF_TOKEN_URL;
+    if (cfTokenUrl) {
+      const cfServers = await this.fetchCloudflareIceServers(String(cfTokenUrl));
+      if (cfServers) servers.push(...cfServers);
+    }
+
+    return servers;
+  }
+
+  /**
+   * GET the Worker endpoint and return a normalised iceServers array. The
+   * Worker is expected to call Cloudflare's `generate-ice-servers` and
+   * forward the response shape `{ iceServers, ttl? }`. We cache until
+   * ttl - 60 s. Hard 2 s fetch timeout — TURN should be a soft enhancement,
+   * never a connection blocker.
+   */
+  private async fetchCloudflareIceServers(tokenUrl: string): Promise<RTCIceServer[] | null> {
+    const now = Date.now();
+    if (this.cfTokenCache && this.cfTokenCache.expiresAt > now) {
+      return this.cfTokenCache.iceServers;
+    }
+    const controller = new AbortController();
+    const fetchTimer = setTimeout(() => controller.abort(), 2000);
+    try {
+      const res = await fetch(tokenUrl, { method: 'GET', signal: controller.signal });
+      if (!res.ok) {
+        console.warn('[peerManager] Cloudflare TURN token fetch failed:', res.status);
+        return null;
+      }
+      const data = (await res.json()) as {
+        iceServers?: RTCIceServer | RTCIceServer[];
+        ttl?: number;
+      };
+      const raw = data.iceServers;
+      if (!raw) {
+        console.warn('[peerManager] Cloudflare TURN token response missing iceServers');
+        return null;
+      }
+      const list = Array.isArray(raw) ? raw : [raw];
+      const ttlSec = typeof data.ttl === 'number' && data.ttl > 0 ? data.ttl : 14400;
+      this.cfTokenCache = {
+        iceServers: list,
+        expiresAt: now + Math.max(60, ttlSec - 60) * 1000,
+      };
+      return list;
+    } catch (err) {
+      console.warn('[peerManager] Cloudflare TURN token fetch error:', err);
+      return null;
+    } finally {
+      clearTimeout(fetchTimer);
+    }
+  }
+
+  private async peerOpts() {
     return {
       debug: 2,
       config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:global.stun.twilio.com:3478' },
-        ],
+        iceServers: await this.buildIceServers(),
       },
     };
   }
@@ -234,12 +365,11 @@ class PeerManager {
    * reconnect + error-as-toast post-open. Rejects on error-before-open or
    * open-timeout.
    */
-  private openPeer(specificId?: string, timeoutMs = 10000): Promise<Peer> {
+  private async openPeer(specificId?: string, timeoutMs = 10000): Promise<Peer> {
+    console.log('[peerManager] openPeer, specificId=', specificId ?? '(auto)');
+    const opts = await this.peerOpts();
     return new Promise((resolve, reject) => {
-      console.log('[peerManager] openPeer, specificId=', specificId ?? '(auto)');
-      const peer = specificId
-        ? new Peer(specificId, this.peerOpts())
-        : new Peer(this.peerOpts());
+      const peer = specificId ? new Peer(specificId, opts) : new Peer(opts);
 
       let hasOpened = false;
       let settled = false;
@@ -308,7 +438,7 @@ class PeerManager {
         }
         if (this.peer !== peer) return;
         console.warn('[peerManager] peer disconnected from broker, reconnecting');
-        usePokerStore.getState().setConnectionStatus('reconnecting');
+        usePokerStore.getState().setConnectionStatus('reconnecting-broker');
         try {
           peer.reconnect();
         } catch (err) {
@@ -362,7 +492,383 @@ class PeerManager {
       }
     });
     this.connections.clear();
+    this.iceLastState.clear();
+    this.iceFailCount.clear();
+    this.iceFailWindowTimers.forEach((t) => clearTimeout(t));
+    this.iceFailWindowTimers.clear();
+    this.iceDisconnectTimers.forEach((t) => clearTimeout(t));
+    this.iceDisconnectTimers.clear();
+    if (this.relayPulseTimer) {
+      clearTimeout(this.relayPulseTimer);
+      this.relayPulseTimer = null;
+    }
+    if (this.restartIceDebounce) {
+      clearTimeout(this.restartIceDebounce);
+      this.restartIceDebounce = null;
+    }
+    this.detachNetworkListeners();
+    this.stopDebugStatsPoller();
     this.destroyPeer();
+  }
+
+  // ─── ICE diagnostics ───────────────────────────────────────────────────────
+
+  /**
+   * Central handler for `iceStateChanged` events on DataConnections. Tracks
+   * last-seen state per conn, drives the relay pulse on fresh 'connected'
+   * transitions, and reacts to 'failed' / 'disconnected' by triggering a
+   * single-conn ICE restart (with a flap window before falling through to
+   * the existing watchdog / migration path).
+   */
+  private onIceStateChange(conn: DataConnection, state: RTCIceConnectionState): void {
+    const prev = this.iceLastState.get(conn.peer);
+    this.iceLastState.set(conn.peer, state);
+
+    if (this.intentionalLeave) return;
+
+    const becameConnected =
+      (state === 'connected' || state === 'completed') &&
+      prev !== 'connected' &&
+      prev !== 'completed';
+    if (becameConnected) {
+      // If we were in a reconnecting-* state during the gap, flip back to
+      // 'connected' now. maybePulseRelayStatus may override to
+      // 'reconnecting-relay' briefly if the selected pair is a TURN relay;
+      // that pulse self-clears back to 'connected' after 3 s.
+      const store = usePokerStore.getState();
+      if (
+        store.connectionStatus === 'reconnecting' ||
+        store.connectionStatus === 'reconnecting-broker' ||
+        store.connectionStatus === 'reconnecting-ice'
+      ) {
+        store.setConnectionStatus('connected');
+      }
+      void this.maybePulseRelayStatus(conn);
+      // Successful connect clears any pending grace timer / flap counter.
+      this.clearIceDisconnectTimer(conn.peer);
+      this.iceFailCount.delete(conn.peer);
+      const flapTimer = this.iceFailWindowTimers.get(conn.peer);
+      if (flapTimer) {
+        clearTimeout(flapTimer);
+        this.iceFailWindowTimers.delete(conn.peer);
+      }
+      return;
+    }
+
+    if (state === 'failed') {
+      this.handleIceFailed(conn);
+      return;
+    }
+
+    if (state === 'disconnected') {
+      this.handleIceDisconnected(conn);
+      return;
+    }
+
+    if (state === 'closed') {
+      this.clearIceDisconnectTimer(conn.peer);
+    }
+  }
+
+  // ─── ICE restart / network resilience (B1, B2, B3) ────────────────────────
+
+  /** Debounce window for restart triggers (1.5 s — well under HEARTBEAT_TIMEOUT_MS/4). */
+  private static readonly RESTART_ICE_DEBOUNCE_MS = 1500;
+  /** A second 'failed' within this window → close conn & let migration take over. */
+  private static readonly ICE_FAIL_WINDOW_MS = 5000;
+  /** Grace before reacting to a 'disconnected' state (often self-recovers). */
+  private static readonly ICE_DISCONNECT_GRACE_MS = 4000;
+  /** If ICE never visibly transitions after restartIce(), revert status this long after. */
+  private static readonly RESTART_ICE_FALLBACK_MS = 2500;
+
+  /**
+   * Call `restartIce()` on every live DataConnection (host-side inbound
+   * conns + client-side outbound conn). Debounced so clustered triggers
+   * (e.g. `online` event arriving the same instant ICE flaps) don't queue
+   * redundant restarts. No-op while `intentionalLeave` is set (teardown).
+   *
+   * Note: PeerJS's wrapper doesn't auto-trigger renegotiation on
+   * `restartIce()`. If ICE is healthy at the time we ask, no state
+   * transition fires and `onIceStateChange` won't flip the UI back to
+   * 'connected' for us. We schedule a short fallback that reverts the
+   * status if nothing visible happens.
+   */
+  private restartIceAllConns(): void {
+    if (this.intentionalLeave) return;
+    if (this.restartIceDebounce) return; // coalesce inside the debounce window
+    this.restartIceDebounce = setTimeout(() => {
+      this.restartIceDebounce = null;
+      if (this.intentionalLeave) return;
+      const targets: DataConnection[] = [];
+      if (this.hostConnection) targets.push(this.hostConnection);
+      this.connections.forEach((c) => targets.push(c));
+      if (targets.length === 0) return;
+      console.log('[peerManager] restartIce on', targets.length, 'conn(s)');
+      const store = usePokerStore.getState();
+      if (
+        store.connectionStatus === 'connected' ||
+        store.connectionStatus === 'reconnecting-relay'
+      ) {
+        store.setConnectionStatus('reconnecting-ice');
+      }
+      for (const conn of targets) {
+        try {
+          conn.peerConnection?.restartIce?.();
+        } catch (err) {
+          console.warn('[peerManager] restartIce failed for', conn.peer, err);
+        }
+      }
+      // Fallback: if ICE never visibly transitions (PeerJS doesn't auto-
+      // renegotiate), revert to 'connected' so the UI doesn't get stuck.
+      // Real ICE failure would have fired 'failed' / 'disconnected' before
+      // this fires, so we only act when ICE looks fine right now.
+      setTimeout(() => {
+        if (this.intentionalLeave) return;
+        if (usePokerStore.getState().connectionStatus !== 'reconnecting-ice') return;
+        const stillHealthy = targets.every((c) => {
+          const s = c.peerConnection?.iceConnectionState;
+          return s === 'connected' || s === 'completed';
+        });
+        if (stillHealthy) {
+          usePokerStore.getState().setConnectionStatus('connected');
+        }
+      }, PeerManager.RESTART_ICE_FALLBACK_MS);
+    }, PeerManager.RESTART_ICE_DEBOUNCE_MS);
+  }
+
+  /** B3 — 'failed' state. Restart once; on the 2nd 'failed' inside the window, close. */
+  private handleIceFailed(conn: DataConnection): void {
+    const count = (this.iceFailCount.get(conn.peer) ?? 0) + 1;
+    this.iceFailCount.set(conn.peer, count);
+    const existingWindow = this.iceFailWindowTimers.get(conn.peer);
+    if (existingWindow) clearTimeout(existingWindow);
+    this.iceFailWindowTimers.set(
+      conn.peer,
+      setTimeout(() => {
+        this.iceFailCount.delete(conn.peer);
+        this.iceFailWindowTimers.delete(conn.peer);
+      }, PeerManager.ICE_FAIL_WINDOW_MS)
+    );
+
+    if (count >= 2) {
+      console.warn('[peerManager] ICE failed twice within window — closing conn', conn.peer);
+      try {
+        conn.close();
+      } catch (err) {
+        console.warn('[peerManager] conn.close after repeated ICE fail errored', err);
+      }
+      return;
+    }
+    this.restartIceAllConns();
+  }
+
+  /** B3 — 'disconnected' state. Wait a grace window; restart only if still down. */
+  private handleIceDisconnected(conn: DataConnection): void {
+    if (this.iceDisconnectTimers.has(conn.peer)) return; // already armed
+    const timer = setTimeout(() => {
+      this.iceDisconnectTimers.delete(conn.peer);
+      if (this.intentionalLeave) return;
+      const cur = this.iceLastState.get(conn.peer);
+      if (cur === 'connected' || cur === 'completed' || cur === 'closed') return;
+      console.warn('[peerManager] ICE still disconnected after grace — restarting', conn.peer);
+      this.restartIceAllConns();
+    }, PeerManager.ICE_DISCONNECT_GRACE_MS);
+    this.iceDisconnectTimers.set(conn.peer, timer);
+  }
+
+  private clearIceDisconnectTimer(peerId: string): void {
+    const t = this.iceDisconnectTimers.get(peerId);
+    if (t) {
+      clearTimeout(t);
+      this.iceDisconnectTimers.delete(peerId);
+    }
+  }
+
+  /**
+   * Wire window-level network lifecycle events to ICE-restart triggers. The
+   * existing `peer.on('disconnected')` path handles PeerJS broker WS drops;
+   * THIS layer handles RTCPeerConnection-level health (the WiFi/4G handoff,
+   * laptop sleep/wake, BFCache restore).
+   *
+   * Called from createRoom / joinAsClient on entry; detached from leaveRoom
+   * / destroyAll on exit. Idempotent — repeated attach is a no-op.
+   */
+  private attachNetworkListeners(): void {
+    if (typeof window === 'undefined') return;
+    if (this.networkListenersAttached) return;
+    window.addEventListener('online', this.onlineHandler);
+    window.addEventListener('offline', this.offlineHandler);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', this.visibilityHandler);
+    }
+    window.addEventListener('pageshow', this.pageshowHandler);
+    this.networkListenersAttached = true;
+  }
+
+  private detachNetworkListeners(): void {
+    if (typeof window === 'undefined') return;
+    if (!this.networkListenersAttached) return;
+    window.removeEventListener('online', this.onlineHandler);
+    window.removeEventListener('offline', this.offlineHandler);
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.visibilityHandler);
+    }
+    window.removeEventListener('pageshow', this.pageshowHandler);
+    this.networkListenersAttached = false;
+  }
+
+  private handleOnline(): void {
+    if (this.intentionalLeave) return;
+    console.log('[peerManager] window online — restarting ICE + broker if needed');
+    this.restartIceAllConns();
+    const peer = this.peer;
+    if (peer && peer.disconnected && !peer.destroyed) {
+      try {
+        peer.reconnect();
+      } catch (err) {
+        console.warn('[peerManager] online: peer.reconnect failed', err);
+      }
+    }
+  }
+
+  private handleOffline(): void {
+    if (this.intentionalLeave) return;
+    console.warn('[peerManager] window offline — flagging reconnecting-ice');
+    const store = usePokerStore.getState();
+    if (store.connectionStatus === 'connected') {
+      store.setConnectionStatus('reconnecting-ice');
+    }
+    // Intentionally NOT tearing anything down — the OS may simply reroute
+    // and ICE survives. If it doesn't, the watchdog or 'online' handler
+    // converges via restartIceAllConns().
+  }
+
+  private handleVisibility(): void {
+    if (typeof document === 'undefined') return;
+    if (document.visibilityState !== 'visible') return;
+    if (this.intentionalLeave) return;
+    console.log('[peerManager] visibility=visible — restarting ICE');
+    this.restartIceAllConns();
+  }
+
+  private handlePageshow(e: PageTransitionEvent): void {
+    if (!e.persisted) return; // only the BFCache-restore branch matters
+    if (this.intentionalLeave) return;
+    console.log('[peerManager] pageshow (BFCache restore) — restarting ICE');
+    this.restartIceAllConns();
+  }
+
+  // ─── Debug stats poller (VITE_DEBUG_WEBRTC=1) ─────────────────────────────
+
+  private startDebugStatsPoller(): void {
+    if (!import.meta.env.VITE_DEBUG_WEBRTC) return;
+    if (this.debugStatsInterval) return;
+    this.debugStatsInterval = setInterval(() => {
+      void this.dumpDebugStats();
+    }, 10000);
+  }
+
+  private stopDebugStatsPoller(): void {
+    if (this.debugStatsInterval) {
+      clearInterval(this.debugStatsInterval);
+      this.debugStatsInterval = null;
+    }
+  }
+
+  private async dumpDebugStats(): Promise<void> {
+    const targets: Array<{ label: string; conn: DataConnection }> = [];
+    if (this.hostConnection) {
+      targets.push({ label: `→host(${this.hostConnection.peer})`, conn: this.hostConnection });
+    }
+    this.connections.forEach((conn, peerId) => {
+      targets.push({ label: `←client(${peerId})`, conn });
+    });
+    for (const { label, conn } of targets) {
+      const pc = conn.peerConnection;
+      if (!pc) continue;
+      try {
+        const stats = await pc.getStats();
+        let selectedPairId: string | undefined;
+        stats.forEach((report) => {
+          if (report.type === 'transport' && typeof report.selectedCandidatePairId === 'string') {
+            selectedPairId = report.selectedCandidatePairId;
+          }
+        });
+        const pair = selectedPairId ? stats.get(selectedPairId) : undefined;
+        const localId = pair?.localCandidateId;
+        const remoteId = pair?.remoteCandidateId;
+        const local = localId ? stats.get(localId) : undefined;
+        const remote = remoteId ? stats.get(remoteId) : undefined;
+        console.debug(
+          `[peerManager:debugStats] ${label}`,
+          JSON.stringify({
+            iceState: pc.iceConnectionState,
+            localType: local?.candidateType,
+            localProtocol: local?.protocol,
+            remoteType: remote?.candidateType,
+            bytesSent: pair?.bytesSent,
+            bytesReceived: pair?.bytesReceived,
+            currentRoundTripTime: pair?.currentRoundTripTime,
+          })
+        );
+      } catch (err) {
+        console.debug('[peerManager:debugStats] getStats failed for', label, err);
+      }
+    }
+  }
+
+  /**
+   * On a fresh ICE 'connected' transition, ask the RTCPeerConnection which
+   * candidate pair was selected. If the local side picked a TURN relay
+   * candidate, flip the UI to a 3 s 'reconnecting-relay' pulse so the user
+   * knows the room reached them via TURN. Pure cosmetic — the channel is
+   * already live by the time we run.
+   */
+  private async maybePulseRelayStatus(conn: DataConnection): Promise<void> {
+    const pc = conn.peerConnection;
+    if (!pc) return;
+    try {
+      const stats = await pc.getStats();
+      let selectedPairId: string | undefined;
+      stats.forEach((report) => {
+        if (report.type === 'transport' && typeof report.selectedCandidatePairId === 'string') {
+          selectedPairId = report.selectedCandidatePairId;
+        }
+      });
+      let localCandidateId: string | undefined;
+      if (selectedPairId) {
+        const pair = stats.get(selectedPairId);
+        if (pair && typeof pair.localCandidateId === 'string') {
+          localCandidateId = pair.localCandidateId;
+        }
+      } else {
+        stats.forEach((report) => {
+          if (
+            report.type === 'candidate-pair' &&
+            report.nominated === true &&
+            (report.state === 'succeeded' || report.selected === true) &&
+            typeof report.localCandidateId === 'string'
+          ) {
+            localCandidateId = report.localCandidateId;
+          }
+        });
+      }
+      if (!localCandidateId) return;
+      const local = stats.get(localCandidateId);
+      if (!local || local.candidateType !== 'relay') return;
+
+      const store = usePokerStore.getState();
+      store.setConnectionStatus('reconnecting-relay');
+      if (this.relayPulseTimer) clearTimeout(this.relayPulseTimer);
+      this.relayPulseTimer = setTimeout(() => {
+        this.relayPulseTimer = null;
+        if (usePokerStore.getState().connectionStatus === 'reconnecting-relay') {
+          usePokerStore.getState().setConnectionStatus('connected');
+        }
+      }, 3000);
+    } catch (err) {
+      console.debug('[peerManager] getStats failed during relay-pulse', err);
+    }
   }
 
   // ─── Public API ────────────────────────────────────────────────────────────
@@ -509,6 +1015,9 @@ class PeerManager {
     this.designatedSuccessor = undefined;
     this.kickedUntil.clear();
     this.migrating = false;
+    // Attach network lifecycle listeners on every room entry. Idempotent.
+    this.attachNetworkListeners();
+    this.startDebugStatsPoller();
   }
 
   // ─── Join as client ────────────────────────────────────────────────────────
@@ -581,6 +1090,14 @@ class PeerManager {
 
       conn.on('close', () => {
         console.warn('[peerManager] joinAsClient conn closed (settled=', settled, ')');
+        this.iceLastState.delete(conn.peer);
+        this.iceFailCount.delete(conn.peer);
+        const flapTimer = this.iceFailWindowTimers.get(conn.peer);
+        if (flapTimer) {
+          clearTimeout(flapTimer);
+          this.iceFailWindowTimers.delete(conn.peer);
+        }
+        this.clearIceDisconnectTimer(conn.peer);
         if (!settled) {
           settle(() => reject(new Error(i18n.t('errors.closedBeforeJoining'))));
           return;
@@ -592,6 +1109,7 @@ class PeerManager {
 
       conn.on('iceStateChanged', (state) => {
         console.log('[peerManager] joinAsClient ICE state =', state);
+        this.onIceStateChange(conn, state);
       });
 
       conn.on('data', (raw) => {
@@ -730,6 +1248,7 @@ class PeerManager {
 
     conn.on('iceStateChanged', (state) => {
       console.log('[peerManager] incoming ICE', conn.peer, '=', state);
+      this.onIceStateChange(conn, state);
     });
 
     conn.on('data', (raw) => {
@@ -756,6 +1275,14 @@ class PeerManager {
       clearTimeout(openTimeout);
       console.warn('[peerManager] incoming closed', conn.peer);
       this.connections.delete(conn.peer);
+      this.iceLastState.delete(conn.peer);
+      this.iceFailCount.delete(conn.peer);
+      const flapTimer = this.iceFailWindowTimers.get(conn.peer);
+      if (flapTimer) {
+        clearTimeout(flapTimer);
+        this.iceFailWindowTimers.delete(conn.peer);
+      }
+      this.clearIceDisconnectTimer(conn.peer);
       const state = usePokerStore.getState();
       const player = Object.values(state.players).find((p) => p.peerId === conn.peer);
       if (player) {
@@ -995,7 +1522,7 @@ class PeerManager {
     }
 
     this.stopWatchdog();
-    usePokerStore.getState().setConnectionStatus('reconnecting');
+    usePokerStore.getState().setConnectionStatus('reconnecting-ice');
 
     if (this.designatedSuccessor === null) {
       // LEAVING{null} explicitly said the room is closing with no successor.
@@ -1334,6 +1861,17 @@ class PeerManager {
       });
     });
     this.broadcastState();
+  }
+
+  // ─── Test-only hooks ───────────────────────────────────────────────────────
+
+  /**
+   * E2E entry point — manually trigger an ICE restart on every live
+   * DataConnection. Mirrors the production `online`/`visibilitychange`
+   * code path; only exposed via `window.__POKER_PEER__` under VITE_E2E.
+   */
+  public triggerIceRestartForTest(): void {
+    this.restartIceAllConns();
   }
 }
 

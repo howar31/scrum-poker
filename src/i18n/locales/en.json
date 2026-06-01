@@ -10,11 +10,17 @@
     "status": {
       "connected": "Connected",
       "reconnecting": "Reconnecting",
+      "reconnecting-broker": "Reconnecting",
+      "reconnecting-ice": "Reconnecting",
+      "reconnecting-relay": "Connected (relay)",
       "disconnected": "Disconnected"
     },
     "statusDetail": {
       "connected": "You are live in the room.",
       "reconnecting": "Re-establishing connection — existing data may still flow.",
+      "reconnecting-broker": "Signaling broker dropped — retrying. Existing peer connections may still flow.",
+      "reconnecting-ice": "Network changed or peer link failed — re-negotiating ICE.",
+      "reconnecting-relay": "Connected via TURN relay (someone in the room is behind a strict network).",
       "disconnected": "Lost connection. If it doesn't recover, rejoin via the invite link or create a new room."
     },
     "disableAnimations": "Disable animations",

@@ -162,9 +162,9 @@ function App() {
                     pushToast({
                       message: `${t(`app.status.${connectionStatus}`)} — ${t(`app.statusDetail.${connectionStatus}`)}`,
                       variant:
-                        connectionStatus === 'connected'
+                        connectionStatus === 'connected' || connectionStatus === 'reconnecting-relay'
                           ? 'success'
-                          : connectionStatus === 'reconnecting'
+                          : connectionStatus.startsWith('reconnecting')
                             ? 'info'
                             : 'warning',
                     })
@@ -175,9 +175,9 @@ function App() {
                 >
                   <span
                     className={`inline-block w-2.5 h-2.5 rounded-full ${
-                      connectionStatus === 'connected'
+                      connectionStatus === 'connected' || connectionStatus === 'reconnecting-relay'
                         ? 'bg-green-500'
-                        : connectionStatus === 'reconnecting'
+                        : connectionStatus.startsWith('reconnecting')
                           ? 'bg-amber-400 animate-pulse'
                           : 'bg-red-500 animate-pulse'
                     }`}
