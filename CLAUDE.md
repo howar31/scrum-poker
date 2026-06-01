@@ -6,7 +6,7 @@ See `SPEC.md` for detailed architecture, state management, and P2P implementatio
 
 ## Commands
 
-- **Node**: 22 (pinned via `.nvmrc`; run `nvm use` in repo root — Vite requires Node ≥ 20.19 / 22.12)
+- **Node**: 24 (latest LTS, pinned via `.nvmrc`; run `nvm use` in repo root — Vite requires Node ≥ 20.19 / 22.12)
 - **Dev**: `npm run dev`
 - **Build**: `npm run build`
 - **Lint**: `npm run lint`
